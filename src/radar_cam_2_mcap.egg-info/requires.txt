@@ -1,0 +1,6 @@
+mcap
+mcap-ros2-support
+av
+pillow
+numpy
+ld2451

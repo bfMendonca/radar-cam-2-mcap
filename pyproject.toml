@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "radar-cam-2-mcap"
+version = "0.1.0"
+description = "Convert a radar-cam-recorder session folder into a ROS 2 MCAP file"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Bruno Mendonça" }]
+keywords = ["mcap", "ros2", "radar", "ld2451", "camera", "converter"]
+dependencies = [
+    "mcap",
+    "mcap-ros2-support",
+    "av",
+    "pillow",
+    "numpy",
+    "ld2451",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Typing :: Typed",
+]
+
+[project.scripts]
+radar-cam-2-mcap = "radar_cam_2_mcap.cli:main"
+
+[dependency-groups]
+test = ["pytest>=7"]
+dev = ["ruff>=0.5", "mypy>=1.10", "pytest-cov>=4"]
+
+[tool.uv]
+default-groups = ["test", "dev"]
+
+[tool.uv.sources]
+ld2451 = { git = "https://github.com/bfMendonca/ld2451.git", rev = "c0ea789391d37b0d98564b0f445ab940812fb476" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+radar_cam_2_mcap = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["av", "av.*", "mcap.*", "mcap_ros2.*", "ld2451", "ld2451.*"]
+ignore_missing_imports = true

@@ -1,0 +1,62 @@
+# radar-cam-2-mcap defaults. Every key is optional; a file overrides only the keys it names.
+# Unknown keys are rejected.
+
+[image]
+format = "jpeg"      # "jpeg" or "png"
+quality = 90         # JPEG quality
+subsampling = 2      # Pillow JPEG subsampling: 0 = 4:4:4, 1 = 4:2:2, 2 = 4:2:0
+
+[mcap]
+compression = "zstd"          # "zstd", "lz4" or "none"
+chunk_size = 4194304          # bytes
+
+[camera]
+# Uncalibrated OV5647 (v1.3), 1296x972 (2x2 binned). Figures from the vendor datasheet, unverified.
+width = 1296
+height = 972
+k = [1286.0, 0.0, 648.0, 0.0, 1286.0, 486.0, 0.0, 0.0, 1.0]
+d = [0.0, 0.0, 0.0, 0.0, 0.0]
+r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+p = [1286.0, 0.0, 648.0, 0.0, 0.0, 1286.0, 486.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+distortion_model = "plumb_bob"
+calibrated = false
+
+[topics]
+image = "/camera/image/compressed"
+camera_info = "/camera/camera_info"
+camera_metadata = "/camera/metadata"
+radar_scan = "/radar/scan"
+radar_status = "/radar/status"
+events = "/events"
+tf_static = "/tf_static"
+frame_camera = "camera_optical_frame"
+frame_radar = "radar_link"
+
+[radar]
+angle_sign = 1       # UNVERIFIED: which direction a positive LD2451 angle means
+
+[time]
+crosscheck_tolerance_ms = 50.0
+base = "wall"        # "wall" or "boot"
+
+# Sensor placement, ROS convention (x forward, y left, z up), metres and radians.
+# base_link is the sensor plate: origin at the plate top, centred, on the front face.
+# Derived from the OpenSCAD testplate, not measured on hardware.
+# Providing any [[transforms]] replaces the whole default list.
+[[transforms]]
+parent = "base_link"
+child = "camera_link"
+xyz = [0.005, 0.0195, 0.042]
+rpy = [0.0, 0.0, 0.0]
+
+[[transforms]]
+parent = "base_link"
+child = "radar_link"
+xyz = [0.0051, -0.0145, 0.042]
+rpy = [0.0, 0.0, 0.0]
+
+[[transforms]]
+parent = "camera_link"
+child = "camera_optical_frame"
+xyz = [0.0, 0.0, 0.0]
+rpy = [-1.5707963267948966, 0.0, -1.5707963267948966]
