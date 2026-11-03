@@ -1,0 +1,10 @@
+{"kind": "state", "state": "recording", "reason": "recording", "boottime_ns": 247487694830, "detail": {}}
+{"kind": "incident", "state": "recording", "reason": "frame drops", "boottime_ns": 555771906658, "detail": {"segment": 0, "drops": 545, "max_gap_ms": 1279.314}}
+{"kind": "incident", "state": "recording", "reason": "segment gap", "boottime_ns": 556460650657, "detail": {"segment": 1, "gap_ns": 3710794000}}
+{"kind": "incident", "state": "recording", "reason": "frame drops", "boottime_ns": 857414396625, "detail": {"segment": 1, "drops": 499, "max_gap_ms": 159.915}}
+{"kind": "incident", "state": "recording", "reason": "segment gap", "boottime_ns": 858083197625, "detail": {"segment": 2, "gap_ns": 3029403000}}
+{"kind": "incident", "state": "recording", "reason": "frame drops", "boottime_ns": 1159841827625, "detail": {"segment": 2, "drops": 492, "max_gap_ms": 159.943}}
+{"kind": "incident", "state": "recording", "reason": "segment gap", "boottime_ns": 1160517784625, "detail": {"segment": 3, "gap_ns": 3852747000}}
+{"kind": "incident", "state": "recording", "reason": "frame drops", "boottime_ns": 1460826983625, "detail": {"segment": 3, "drops": 511, "max_gap_ms": 439.75}}
+{"kind": "incident", "state": "recording", "reason": "segment gap", "boottime_ns": 1461479781625, "detail": {"segment": 4, "gap_ns": 2862992000}}
+{"kind": "incident", "state": "recording", "reason": "frame drops", "boottime_ns": 1747840500625, "detail": {"segment": 4, "drops": 467, "max_gap_ms": 119.944}}

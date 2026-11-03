@@ -1,0 +1,116 @@
+{
+  "boot_id": "b5d93172-4c6b-4497-9fee-f98deb93e111",
+  "clock_samples": [
+    {
+      "boottime_ns": 246242494032,
+      "label": "start",
+      "monotonic_ns": 246242521032,
+      "realtime_ns": 1793353168681977539
+    },
+    {
+      "boottime_ns": 555780244658,
+      "label": "segment 1",
+      "monotonic_ns": 555780263658,
+      "realtime_ns": 1793353478219717166
+    },
+    {
+      "boottime_ns": 857420246625,
+      "label": "segment 2",
+      "monotonic_ns": 857420264625,
+      "realtime_ns": 1793353779859718133
+    },
+    {
+      "boottime_ns": 1159845914625,
+      "label": "segment 3",
+      "monotonic_ns": 1159845935625,
+      "realtime_ns": 1793354082285389133
+    },
+    {
+      "boottime_ns": 1460828563625,
+      "label": "segment 4",
+      "monotonic_ns": 1460828584625,
+      "realtime_ns": 1793354383268038133
+    },
+    {
+      "boottime_ns": 1747840910625,
+      "label": "stop",
+      "monotonic_ns": 1747840928625,
+      "realtime_ns": 1793354670280382133
+    }
+  ],
+  "config": {
+    "camera": {
+      "binary": "rpicam-vid",
+      "bitrate": 4000000,
+      "enabled": true,
+      "extra_args": [],
+      "framerate": 25.0,
+      "height": 972,
+      "stall_timeout_s": 10.0,
+      "stop_timeout_s": 5.0,
+      "width": 1296
+    },
+    "radar": {
+      "baudrate": 115200,
+      "detection": null,
+      "enabled": true,
+      "port": "/dev/serial0",
+      "silence_timeout_s": 5.0
+    },
+    "recording": {
+      "retry_initial_s": 1.0,
+      "retry_max_s": 60.0,
+      "segment_s": 300.0,
+      "status_file": "/run/radar-cam-recorder/status.json"
+    },
+    "setup": {
+      "geometry": {},
+      "notes": "acceptance run 2026-10-20, indoor"
+    }
+  },
+  "devices": {
+    "camera": {
+      "backend": "rpicam-vid",
+      "binary": "rpicam-vid",
+      "bitrate": 4000000,
+      "extra_args": [],
+      "framerate": 25.0,
+      "height": 972,
+      "width": 1296
+    },
+    "radar": {
+      "firmware": "V1.13.25070114",
+      "params": {
+        "direction": 2,
+        "max_distance_m": 100,
+        "min_speed_kmh": 1,
+        "no_target_delay_s": 1
+      }
+    }
+  },
+  "format_version": 1,
+  "last_radar_t_rx_ns": null,
+  "ntp_synced": true,
+  "radar_latency_ns": 0,
+  "segments": [
+    {
+      "end_boottime_ns": 250635721000,
+      "frames": 40,
+      "index": 0,
+      "start_boottime_ns": 246239603087
+    },
+    {
+      "end_boottime_ns": 552346902000,
+      "frames": 40,
+      "index": 1,
+      "start_boottime_ns": 548422931666
+    }
+  ],
+  "session_id": "s000066",
+  "setup": {
+    "geometry": {},
+    "notes": "acceptance run 2026-10-20, indoor"
+  },
+  "state": "complete",
+  "stop_reason": "split by button"
+}

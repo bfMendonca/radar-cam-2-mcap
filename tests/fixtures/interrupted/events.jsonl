@@ -1,0 +1,9 @@
+{"kind": "state", "state": "starting", "reason": "starting", "boottime_ns": 39001697000, "detail": {}}
+{"kind": "state", "state": "recording", "reason": "recording", "boottime_ns": 42276623000, "detail": {}}
+{"kind": "incident", "state": "recording", "reason": "camera exited", "boottime_ns": 43803960000, "detail": {"segment": 0, "returncode": 255, "log": ["Could not open any dmaHeap device", "[0:00:43.381274000] [453] \u001b[1;32m INFO \u001b[1;37mCamera \u001b[1;34mcamera_manager.cpp:326 \u001b[0mlibcamera v0.5.0+59-d83ff0a4", "ERROR: *** no cameras available ***"]}}
+{"kind": "state", "state": "degraded", "reason": "camera missing", "boottime_ns": 43901092000, "detail": {}}
+{"kind": "state", "state": "recording", "reason": "recording", "boottime_ns": 46483718000, "detail": {}}
+{"kind": "state", "state": "degraded", "reason": "camera missing", "boottime_ns": 47567560000, "detail": {}}
+{"kind": "state", "state": "recording", "reason": "recording", "boottime_ns": 51161412000, "detail": {}}
+{"kind": "incident", "state": "recording", "reason": "frame drops", "boottime_ns": 349135866000, "detail": {"segment": 0, "drops": 436, "max_gap_ms": 359.809}}
+{"kind": "incident", "state": "recording", "reason": "segment gap", "boottime_ns": 349819280000, "detail": {"segment": 1, "gap_ns": 4451570000}}

@@ -1,0 +1,110 @@
+{
+  "boot_id": "94ac1913-2916-4c2f-b183-a54807113426",
+  "clock_samples": [
+    {
+      "boottime_ns": 48061528000,
+      "label": "start",
+      "monotonic_ns": 48061548000,
+      "realtime_ns": 1792637591803658000
+    },
+    {
+      "boottime_ns": 348040504000,
+      "label": "segment 1",
+      "monotonic_ns": 348040522000,
+      "realtime_ns": 1792637891782632000
+    },
+    {
+      "boottime_ns": 650436825000,
+      "label": "segment 2",
+      "monotonic_ns": 650436846000,
+      "realtime_ns": 1792638194178957000
+    },
+    {
+      "boottime_ns": 951611667000,
+      "label": "segment 3",
+      "monotonic_ns": 951611684000,
+      "realtime_ns": 1792638495353795000
+    }
+  ],
+  "config": {
+    "camera": {
+      "binary": "rpicam-vid",
+      "bitrate": 4000000,
+      "enabled": true,
+      "extra_args": [],
+      "framerate": 25.0,
+      "height": 972,
+      "stall_timeout_s": 10.0,
+      "stop_timeout_s": 5.0,
+      "width": 1296
+    },
+    "radar": {
+      "baudrate": 115200,
+      "detection": null,
+      "enabled": true,
+      "port": "/dev/serial0",
+      "silence_timeout_s": 5.0
+    },
+    "recording": {
+      "retry_initial_s": 1.0,
+      "retry_max_s": 60.0,
+      "segment_s": 300.0,
+      "status_file": "/run/radar-cam-recorder/status.json"
+    },
+    "setup": {
+      "geometry": {},
+      "notes": "acceptance run 2026-10-20, indoor"
+    }
+  },
+  "devices": {
+    "camera": {
+      "backend": "rpicam-vid",
+      "binary": "rpicam-vid",
+      "bitrate": 4000000,
+      "extra_args": [],
+      "framerate": 25.0,
+      "height": 972,
+      "width": 1296
+    },
+    "radar": {
+      "firmware": "V1.13.25070114",
+      "params": {
+        "direction": 2,
+        "max_distance_m": 100,
+        "min_speed_kmh": 1,
+        "no_target_delay_s": 1
+      }
+    }
+  },
+  "format_version": 1,
+  "last_radar_t_rx_ns": null,
+  "ntp_synced": false,
+  "radar_latency_ns": 0,
+  "segments": [
+    {
+      "end_boottime_ns": 60689517000,
+      "frames": 20,
+      "index": 0,
+      "start_boottime_ns": 39167374000
+    },
+    {
+      "end_boottime_ns": 343958596000,
+      "frames": 20,
+      "index": 1,
+      "start_boottime_ns": 341267152000
+    },
+    {
+      "end_boottime_ns": 645428343000,
+      "frames": 20,
+      "index": 2,
+      "start_boottime_ns": 642751720000
+    }
+  ],
+  "session_id": "s000033",
+  "setup": {
+    "geometry": {},
+    "notes": "acceptance run 2026-10-20, indoor"
+  },
+  "state": "in_progress",
+  "stop_reason": null
+}

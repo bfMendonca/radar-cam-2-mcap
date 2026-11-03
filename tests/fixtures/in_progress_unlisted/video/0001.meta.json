@@ -1,0 +1,682 @@
+[
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.474254,
+   1.481804
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.544163,
+  "DigitalGain": 1.0,
+  "AeState": 1,
+  "ColourTemperature": 4398,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1842,
+  "ColourCorrectionMatrix": [
+   2.000399,
+   -0.494826,
+   -0.505581,
+   -0.531735,
+   2.00766,
+   -0.475925,
+   -0.104259,
+   -0.697899,
+   1.802155
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637886701235,
+  "SensorTimestamp": 342959133000
+ },
+ {
+  "ExposureTime": 39891,
+  "SensorTimestamp": 342999103000,
+  "FrameWallClock": 1792637886741205,
+  "ColourTemperature": 4398,
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "ColourCorrectionMatrix": [
+   2.000399,
+   -0.494826,
+   -0.505581,
+   -0.531735,
+   2.00766,
+   -0.475925,
+   -0.104259,
+   -0.697899,
+   1.802155
+  ],
+  "FocusFoM": 1847,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "AeState": 1,
+  "DigitalGain": 1.0,
+  "Lux": 53.50602,
+  "FrameDuration": 39978,
+  "AnalogueGain": 8.0,
+  "ColourGains": [
+   1.474254,
+   1.481804
+  ]
+ },
+ {
+  "ExposureTime": 39891,
+  "SensorTimestamp": 343039082000,
+  "FrameWallClock": 1792637886781184,
+  "ColourTemperature": 4398,
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "ColourCorrectionMatrix": [
+   2.000399,
+   -0.494826,
+   -0.505581,
+   -0.531735,
+   2.00766,
+   -0.475925,
+   -0.104259,
+   -0.697899,
+   1.802155
+  ],
+  "FocusFoM": 1853,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "AeState": 2,
+  "DigitalGain": 1.0,
+  "Lux": 53.471489,
+  "FrameDuration": 39978,
+  "AnalogueGain": 8.0,
+  "ColourGains": [
+   1.474254,
+   1.481804
+  ]
+ },
+ {
+  "ExposureTime": 39891,
+  "SensorTimestamp": 343079065000,
+  "FrameWallClock": 1792637886821167,
+  "ColourTemperature": 4406,
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "ColourCorrectionMatrix": [
+   2.000658,
+   -0.495397,
+   -0.505268,
+   -0.531432,
+   2.007753,
+   -0.476321,
+   -0.10404,
+   -0.697168,
+   1.801205
+  ],
+  "FocusFoM": 1843,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "AeState": 2,
+  "DigitalGain": 1.0,
+  "Lux": 53.510777,
+  "FrameDuration": 39978,
+  "AnalogueGain": 8.0,
+  "ColourGains": [
+   1.476066,
+   1.47935
+  ]
+ },
+ {
+  "ExposureTime": 39891,
+  "SensorTimestamp": 343119044000,
+  "FrameWallClock": 1792637886861146,
+  "ColourTemperature": 4414,
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "ColourCorrectionMatrix": [
+   2.000904,
+   -0.49594,
+   -0.504971,
+   -0.531143,
+   2.00784,
+   -0.476697,
+   -0.103832,
+   -0.696473,
+   1.800303
+  ],
+  "FocusFoM": 1841,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "AeState": 2,
+  "DigitalGain": 1.0,
+  "Lux": 53.623642,
+  "FrameDuration": 39978,
+  "AnalogueGain": 8.0,
+  "ColourGains": [
+   1.477786,
+   1.477018
+  ]
+ },
+ {
+  "ExposureTime": 39891,
+  "SensorTimestamp": 343159022000,
+  "FrameWallClock": 1792637886901124,
+  "ColourTemperature": 4422,
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "ColourCorrectionMatrix": [
+   2.001138,
+   -0.496456,
+   -0.504689,
+   -0.530869,
+   2.007924,
+   -0.477054,
+   -0.103635,
+   -0.695813,
+   1.799446
+  ],
+  "FocusFoM": 1855,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "AeState": 2,
+  "DigitalGain": 1.0,
+  "Lux": 53.641048,
+  "FrameDuration": 39978,
+  "AnalogueGain": 8.0,
+  "ColourGains": [
+   1.479421,
+   1.474803
+  ]
+ },
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.480974,
+   1.472699
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.582169,
+  "DigitalGain": 1.0,
+  "AeState": 2,
+  "ColourTemperature": 4429,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1852,
+  "ColourCorrectionMatrix": [
+   2.00136,
+   -0.496946,
+   -0.504421,
+   -0.530609,
+   2.008003,
+   -0.477394,
+   -0.103448,
+   -0.695186,
+   1.798631
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637886941100,
+  "SensorTimestamp": 343198998000
+ },
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.48245,
+   1.4707
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.595215,
+  "DigitalGain": 1.0,
+  "AeState": 2,
+  "ColourTemperature": 4435,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1846,
+  "ColourCorrectionMatrix": [
+   2.001571,
+   -0.497412,
+   -0.504167,
+   -0.530362,
+   2.008078,
+   -0.477716,
+   -0.10327,
+   -0.69459,
+   1.797857
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637887021054,
+  "SensorTimestamp": 343278952000
+ },
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.483851,
+   1.468801
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.722275,
+  "DigitalGain": 1.0,
+  "AeState": 2,
+  "ColourTemperature": 4442,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1856,
+  "ColourCorrectionMatrix": [
+   2.001771,
+   -0.497854,
+   -0.503925,
+   -0.530127,
+   2.00815,
+   -0.478023,
+   -0.1031,
+   -0.694024,
+   1.797122
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637887101013,
+  "SensorTimestamp": 343358911000
+ },
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.485183,
+   1.466997
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.673981,
+  "DigitalGain": 1.0,
+  "AeState": 2,
+  "ColourTemperature": 4448,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1866,
+  "ColourCorrectionMatrix": [
+   2.001961,
+   -0.498274,
+   -0.503695,
+   -0.529904,
+   2.008218,
+   -0.478314,
+   -0.10294,
+   -0.693487,
+   1.796424
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637887140997,
+  "SensorTimestamp": 343398895000
+ },
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.486448,
+   1.465283
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.658607,
+  "DigitalGain": 1.0,
+  "AeState": 2,
+  "ColourTemperature": 4454,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1849,
+  "ColourCorrectionMatrix": [
+   2.002142,
+   -0.498673,
+   -0.503477,
+   -0.529692,
+   2.008282,
+   -0.47859,
+   -0.102787,
+   -0.692976,
+   1.795761
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637887180975,
+  "SensorTimestamp": 343438873000
+ },
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.48765,
+   1.463655
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.668362,
+  "DigitalGain": 1.0,
+  "AeState": 2,
+  "ColourTemperature": 4459,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1855,
+  "ColourCorrectionMatrix": [
+   2.002314,
+   -0.499052,
+   -0.50327,
+   -0.52949,
+   2.008343,
+   -0.478853,
+   -0.102642,
+   -0.692491,
+   1.795131
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637887220955,
+  "SensorTimestamp": 343478853000
+ },
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.489071,
+   1.461671
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.793339,
+  "DigitalGain": 1.0,
+  "AeState": 2,
+  "ColourTemperature": 4466,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1837,
+  "ColourCorrectionMatrix": [
+   2.00254,
+   -0.499551,
+   -0.502997,
+   -0.529225,
+   2.008424,
+   -0.479199,
+   -0.102451,
+   -0.691853,
+   1.794302
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637887260939,
+  "SensorTimestamp": 343518837000
+ },
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.49042,
+   1.459787
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.730934,
+  "DigitalGain": 1.0,
+  "AeState": 2,
+  "ColourTemperature": 4473,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1860,
+  "ColourCorrectionMatrix": [
+   2.002755,
+   -0.500025,
+   -0.502738,
+   -0.528973,
+   2.008501,
+   -0.479527,
+   -0.10227,
+   -0.691247,
+   1.793514
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637887340890,
+  "SensorTimestamp": 343598788000
+ },
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.491703,
+   1.457996
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.692215,
+  "DigitalGain": 1.0,
+  "AeState": 2,
+  "ColourTemperature": 4479,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1864,
+  "ColourCorrectionMatrix": [
+   2.002959,
+   -0.500475,
+   -0.502492,
+   -0.528734,
+   2.008573,
+   -0.479839,
+   -0.102097,
+   -0.69067,
+   1.792766
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637887380872,
+  "SensorTimestamp": 343638770000
+ },
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.492921,
+   1.456295
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.814659,
+  "DigitalGain": 1.0,
+  "AeState": 2,
+  "ColourTemperature": 4486,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1863,
+  "ColourCorrectionMatrix": [
+   2.003153,
+   -0.500903,
+   -0.502258,
+   -0.528507,
+   2.008642,
+   -0.480135,
+   -0.101934,
+   -0.690123,
+   1.792055
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637887460827,
+  "SensorTimestamp": 343718725000
+ },
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.494078,
+   1.45468
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.828926,
+  "DigitalGain": 1.0,
+  "AeState": 2,
+  "ColourTemperature": 4491,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1871,
+  "ColourCorrectionMatrix": [
+   2.003337,
+   -0.50131,
+   -0.502036,
+   -0.528291,
+   2.008708,
+   -0.480417,
+   -0.101778,
+   -0.689603,
+   1.79138
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637887500824,
+  "SensorTimestamp": 343758722000
+ },
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.495178,
+   1.453145
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.749611,
+  "DigitalGain": 1.0,
+  "AeState": 2,
+  "ColourTemperature": 4497,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1869,
+  "ColourCorrectionMatrix": [
+   2.003512,
+   -0.501696,
+   -0.501824,
+   -0.528086,
+   2.00877,
+   -0.480684,
+   -0.10163,
+   -0.68911,
+   1.790738
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637887580758,
+  "SensorTimestamp": 343838656000
+ },
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.496222,
+   1.451687
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.780792,
+  "DigitalGain": 1.0,
+  "AeState": 2,
+  "ColourTemperature": 4502,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1868,
+  "ColourCorrectionMatrix": [
+   2.003678,
+   -0.502062,
+   -0.501624,
+   -0.527891,
+   2.00883,
+   -0.480938,
+   -0.10149,
+   -0.68864,
+   1.790129
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637887620743,
+  "SensorTimestamp": 343878641000
+ },
+ {
+  "ExposureTime": 39891,
+  "ColourGains": [
+   1.497214,
+   1.450301
+  ],
+  "AnalogueGain": 8.0,
+  "FrameDuration": 39978,
+  "Lux": 53.869415,
+  "DigitalGain": 1.0,
+  "AeState": 2,
+  "ColourTemperature": 4507,
+  "SensorBlackLevels": [
+   1024,
+   1024,
+   1024,
+   1024
+  ],
+  "FocusFoM": 1870,
+  "ColourCorrectionMatrix": [
+   2.003836,
+   -0.502411,
+   -0.501434,
+   -0.527706,
+   2.008886,
+   -0.48118,
+   -0.101357,
+   -0.688195,
+   1.78955
+  ],
+  "ScalerCrop": "(0, 0)/2592x1944",
+  "FrameWallClock": 1792637887700698,
+  "SensorTimestamp": 343958596000
+ }
+]

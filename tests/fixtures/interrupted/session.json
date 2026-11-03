@@ -1,0 +1,86 @@
+{
+  "boot_id": "1da47ddf-7acb-4128-951e-d98518965728",
+  "clock_samples": [
+    {
+      "boottime_ns": 39142172000,
+      "label": "start",
+      "monotonic_ns": 39142192000,
+      "realtime_ns": 1792636736463419000
+    },
+    {
+      "boottime_ns": 349141332000,
+      "label": "segment 1",
+      "monotonic_ns": 349141351000,
+      "realtime_ns": 1792637046462576000
+    }
+  ],
+  "config": {
+    "camera": {
+      "binary": "rpicam-vid",
+      "bitrate": 4000000,
+      "enabled": true,
+      "extra_args": [],
+      "framerate": 25.0,
+      "height": 972,
+      "stall_timeout_s": 10.0,
+      "stop_timeout_s": 5.0,
+      "width": 1296
+    },
+    "radar": {
+      "baudrate": 115200,
+      "detection": null,
+      "enabled": true,
+      "port": "/dev/serial0",
+      "silence_timeout_s": 5.0
+    },
+    "recording": {
+      "retry_initial_s": 1.0,
+      "retry_max_s": 60.0,
+      "segment_s": 300.0,
+      "status_file": "/run/radar-cam-recorder/status.json"
+    },
+    "setup": {
+      "geometry": {},
+      "notes": "acceptance run 2026-10-20, indoor"
+    }
+  },
+  "devices": {
+    "camera": {
+      "backend": "rpicam-vid",
+      "binary": "rpicam-vid",
+      "bitrate": 4000000,
+      "extra_args": [],
+      "framerate": 25.0,
+      "height": 972,
+      "width": 1296
+    },
+    "radar": {
+      "firmware": "V1.13.25070114",
+      "params": {
+        "direction": 2,
+        "max_distance_m": 100,
+        "min_speed_kmh": 1,
+        "no_target_delay_s": 1
+      }
+    }
+  },
+  "format_version": 1,
+  "last_radar_t_rx_ns": 449863224000,
+  "ntp_synced": false,
+  "radar_latency_ns": 0,
+  "segments": [
+    {
+      "end_boottime_ns": 56320817000,
+      "frames": 20,
+      "index": 0,
+      "start_boottime_ns": 39073481000
+    }
+  ],
+  "session_id": "s000030",
+  "setup": {
+    "geometry": {},
+    "notes": "acceptance run 2026-10-20, indoor"
+  },
+  "state": "interrupted",
+  "stop_reason": "interrupted (found at next start)"
+}
