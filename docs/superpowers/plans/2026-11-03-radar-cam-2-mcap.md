@@ -6,7 +6,7 @@
 
 **Architecture:** A small pipeline of focused modules: tolerant session reader -> time module (boot clock to wall clock) -> per-stream generators (video frames, radar reports) -> message mappers -> one MCAP sink. The orchestrator merges the streams by `log_time` and writes to a temp file that is renamed on success. Config (TOML) carries every fixed parameter.
 
-**Tech Stack:** Python >= 3.10, `uv`, `mcap` + `mcap-ros2-support`, PyAV (`av`), Pillow, NumPy, the `ld2451` driver (git dependency, pinned to a tag or commit), pytest, ruff, mypy `--strict`.
+**Tech Stack:** Python >= 3.11, `uv`, `mcap` + `mcap-ros2-support`, PyAV (`av`), Pillow, NumPy, the `ld2451` driver (git dependency, pinned to a tag or commit), pytest, ruff, mypy `--strict`.
 
 **Spec:** `docs/superpowers/specs/2026-11-01-radar-cam-2-mcap-design.md` (section numbers below refer to it).
 
@@ -69,7 +69,7 @@ tests/ (one file per module), tests/fixtures/ (small real-session slices), scrip
 
 - [ ] **Step 1: Failing tests.** `test_config.py`: `test_defaults_match_spec` asserts jpeg/90/subsampling 2, zstd, width 1296, height 972, `calibrated is False`, and the three default transforms above; `test_file_overrides_only_named_keys` writes a TOML with `[image] quality = 95` and asserts quality 95 with format still `jpeg`; `test_unknown_key_rejected` expects `ConfigError`. `test_cli.py`: `test_version` runs `main(["--version"])` and expects a SystemExit with 0 and the version on stdout.
 - [ ] **Step 2: Run** `uv run pytest -q` and see them fail (no package).
-- [ ] **Step 3: Scaffold and implement.** `uv init --package` layout (src layout, `radar_cam_2_mcap`), `requires-python = ">=3.10"`, console script `radar-cam-2-mcap = radar_cam_2_mcap.cli:main`, dependency groups mirroring `../radar-cam-recorder/pyproject.toml` (test, dev). Add runtime dependencies `mcap`, `mcap-ros2-support`, `av`, `pillow`, `numpy`, and `ld2451` as a git source pinned to a commit (`[tool.uv.sources]`). Implement `config.py` with `tomllib`. Write `config/default.toml` as the documented defaults. `ci.yml` runs ruff, mypy strict and pytest on Linux and macOS. Run `git init` first: the folder is not a repository yet.
+- [ ] **Step 3: Scaffold and implement.** `uv init --package` layout (src layout, `radar_cam_2_mcap`), `requires-python = ">=3.11"`, console script `radar-cam-2-mcap = radar_cam_2_mcap.cli:main`, dependency groups mirroring `../radar-cam-recorder/pyproject.toml` (test, dev). Add runtime dependencies `mcap`, `mcap-ros2-support`, `av`, `pillow`, `numpy`, and `ld2451` as a git source pinned to a commit (`[tool.uv.sources]`). Implement `config.py` with `tomllib`. Write `config/default.toml` as the documented defaults. `ci.yml` runs ruff, mypy strict and pytest on Linux and macOS. Run `git init` first: the folder is not a repository yet.
 - [ ] **Step 4: Run** `uv run pytest -q && uv run ruff check . && uv run mypy --strict src` and expect all green.
 - [ ] **Step 5: Commit** `feat: project scaffold, config loader, cli skeleton`.
 
