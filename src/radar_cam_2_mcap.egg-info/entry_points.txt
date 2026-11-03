@@ -1,2 +1,0 @@
-[console_scripts]
-radar-cam-2-mcap = radar_cam_2_mcap.cli:main
