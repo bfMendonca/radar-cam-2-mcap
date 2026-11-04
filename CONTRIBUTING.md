@@ -16,6 +16,7 @@ These are the checks CI runs (`.github/workflows/ci.yml`):
 
 ```sh
 uv run ruff check .
+uv run ruff format --check .
 uv run mypy --strict src
 uv run pytest -q
 ```

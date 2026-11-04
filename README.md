@@ -15,8 +15,9 @@ of scope here.
 
 ## Install
 
-You need Python 3.11 or newer and [uv](https://docs.astral.sh/uv/). CI runs on Ubuntu 24.04 and
-macOS.
+You need Python 3.11 or newer. CI runs Python 3.11 and 3.12 on Ubuntu 24.04 and macOS.
+
+With [uv](https://docs.astral.sh/uv/) (recommended: `uv.lock` pins every dependency):
 
 ```sh
 git clone https://github.com/bfMendonca/radar-cam-2-mcap.git
@@ -25,8 +26,17 @@ uv sync
 uv run radar-cam-2-mcap --version
 ```
 
-`uv sync` installs the `ld2451` driver from GitHub at the commit pinned in `pyproject.toml`, so it
-needs network access and `git`.
+With pip or pipx (dependencies resolved from the version ranges in `pyproject.toml`, not the lock):
+
+```sh
+pipx install git+https://github.com/bfMendonca/radar-cam-2-mcap.git
+# or, in a virtual environment:
+pip install git+https://github.com/bfMendonca/radar-cam-2-mcap.git
+```
+
+Either way the `ld2451` driver is installed from GitHub at the commit pinned in `pyproject.toml`
+(a direct `git+https` reference), so installing needs network access and `git`. The converter
+relies on internals of that exact driver commit; do not replace it with another `ld2451`.
 
 ## Quick start
 
@@ -76,8 +86,24 @@ radar-cam-2-mcap convert [-h] -o OUT_DIR [--config FILE] [--overwrite] [--per-se
 | `--jobs N` | Convert N sessions in parallel (one process each). Default 1. |
 | `--quiet` | Print only failures and warnings. |
 
-Output goes to a `.tmp` file that is renamed on success, so a failed run leaves no truncated
-`.mcap` under the final name.
+Each output is written to a uniquely named temp file in the output directory
+(`<name>.mcap.<random>.tmp`) and renamed to its final name only when the session converts. A
+session that fails, including a `--jobs` worker that is killed, leaves no file under the final
+name; temp files of a killed worker are removed when the pool finishes. Only if the main
+`radar-cam-2-mcap` process itself is killed can a `*.mcap.*.tmp` file stay behind.
+
+The output name comes from `session_id` in `session.json`, and every recorder numbers its sessions
+from `s000001`, so sessions from two devices can share a name. If two sessions of one run would
+write the same output file, nothing is converted and the exit code is 2; convert them into
+separate output directories.
+
+With `--per-segment` the files of one session are renamed one after another, not as a set: if a
+later rename fails, the earlier files already have their final names (with `--overwrite`, the
+previous versions of those files are gone) although the session is reported failed.
+
+With `--jobs N`, at most N sessions run at a time. If a worker dies (for example killed by the
+out-of-memory killer), the sessions that were running are reported failed and the ones that had
+not started are reported `not run: pool broken`; the summary is always printed.
 
 ### Exit codes
 
@@ -96,9 +122,15 @@ recovered radar frames and trailing bytes alone are notes, not warnings.
 
 Sessions in state `complete`, `interrupted` or `in_progress` are accepted; the last two produce a
 warning. Segments are discovered from the files as well as from `session.json`. `meta.json` is the
-authority for per-frame timestamps. If the decoded frame count differs from it, conversion stops
-with a `FrameCountMismatch` error unless you pass `--allow-prefix`. An unknown recorder
-`format_version` is refused.
+authority for per-frame timestamps. Before any decoding, the frames of every segment are counted
+(H.264 slice NAL units against `meta.json` entries); if they differ, the session fails at once with
+a `FrameCountMismatch` error unless you pass `--allow-prefix`, which converts the common prefix of
+each segment with a warning. An unknown recorder `format_version` is refused.
+
+Frames are paired with `meta.json` by their position in the stream, not by the order the decoder
+returns them. If the decoder cannot decode a frame (damaged data), that frame and its `meta.json`
+entry are skipped and a warning names the frame indexes; the frames after it keep their own
+timestamps.
 
 ## Output
 
@@ -128,6 +160,11 @@ File-level metadata records:
   clock anchors, recorder config, devices.
 * `segments`: per-segment frame and radar counts and boot-clock spans.
 * `radar_stats`: radar decoder counters (reads, frames, bytes discarded, framing errors, ...).
+
+With `--per-segment`, the `warnings` and `notes` of each file are cumulative: file k holds the
+session-level warnings plus the findings of files 0 to k, not those of later files. The summary
+on stderr and the exit code cover the whole session. In the `/events` topic, each file has only
+the findings that concern it.
 
 ### Radar mapping
 
@@ -188,7 +225,10 @@ point straight forward. Update `[[transforms]]` in your config if the mount diff
 ## Configuration
 
 `config/default.toml` lists every key with its default. Pass a file with `--config`; it overrides
-only the keys it names, and unknown keys are rejected (exit code 2).
+only the keys it names. Unknown keys, wrong types and out-of-range values (for example
+`quality` outside 1 to 100, `subsampling` other than 0 to 2, `angle_sign` other than -1 or 1,
+`k`/`r` without 9 values, `p` without 12, `d` of the wrong length for `plumb_bob`, or two topics
+with the same name) are rejected with exit code 2 before anything is converted.
 
 | Section | Key | Default | Meaning |
 | --- | --- | --- | --- |
@@ -197,7 +237,7 @@ only the keys it names, and unknown keys are rejected (exit code 2).
 | | `subsampling` | 2 | Pillow JPEG subsampling: 0 = 4:4:4, 1 = 4:2:2, 2 = 4:2:0. |
 | `[mcap]` | `compression` | `"zstd"` | `"zstd"`, `"lz4"` or `"none"`. |
 | | `chunk_size` | 4194304 | Chunk size in bytes. |
-| `[camera]` | `width`, `height` | 1296, 972 | Image size for `CameraInfo`. |
+| `[camera]` | `width`, `height` | 1296, 972 | Image size for `CameraInfo`. A warning is recorded if the decoded frames have another size. |
 | | `k`, `d`, `r`, `p` | see file | Intrinsics, distortion, rectification and projection matrices. |
 | | `distortion_model` | `"plumb_bob"` | |
 | | `calibrated` | `false` | Accepted in the config; not written to the output file. |
@@ -251,9 +291,6 @@ The design is in [docs/superpowers/specs](docs/superpowers/specs/2026-11-01-rada
 
 * Playback in Foxglove or any real-time player has not been tested. Only a script-level check of
   image spacing in `log_time` order was done.
-* On a damaged session the frame-count check runs when the bad segment is reached, so
-  `FrameCountMismatch` can appear after minutes of work. Use `--allow-prefix` up front for
-  interrupted or in-progress sessions.
 * Camera intrinsics are uncalibrated and the sensor placement is derived from CAD, not measured.
 * `angle_sign` is unverified and `invert_direction` is empirical (see above).
 * `amplitude` is the raw SNR value, not dB.
@@ -271,6 +308,7 @@ The design is in [docs/superpowers/specs](docs/superpowers/specs/2026-11-01-rada
 uv sync --all-groups
 uv run pytest
 uv run ruff check .
+uv run ruff format --check .
 uv run mypy
 ```
 
