@@ -142,6 +142,25 @@ tests/ (one file per module), tests/fixtures/ (small real-session slices), scrip
 
 ---
 
+### Task 5b: Recover short radar data frames (added during execution, controller ruling)
+
+**Why:** a survey of all 21 real sessions found about 13% of radar data frames malformed in 8 sessions: the count byte and the length field declare N targets but N-1 are present, and the footer `f8f7f6f5` sits exactly 5 bytes early (93% of malformed frames). The `ld2451` driver drops them with their valid targets. Example: `f4f3f2f1 0c00 02 01 742c010cff f8f7f6f5` (declares 2, carries 1).
+
+**Files:**
+- Modify: `src/radar_cam_2_mcap/radar.py`, `src/radar_cam_2_mcap/config.py`, `config/default.toml`
+- Test: `tests/test_radar.py`, `tests/test_config.py`
+
+**Interfaces:**
+- Consumes: Task 5 `RadarStats`, `iter_radar_reports`; `RadarConfig`.
+- Produces: `RadarConfig.recover_short_frames: bool = True`; `RadarStats.recovered_frames: int = 0`; `iter_radar_reports(path, stats, *, decoder=None, recover_short_frames: bool = True)`. A recovered report has the targets actually present, `header_bytes` unchanged (original reported count preserved), and is counted in `recovered_frames` and not in `framing_errors`.
+
+- [ ] **Step 1: Failing tests.** Build frames with `encode_report`, then corrupt them: declared count and length one target too large (footer 5 bytes early) gives one recovered report with N-1 targets and `recovered_frames == 1`; the frame following it still decodes; the same input with `recover_short_frames=False` gives no report for the short frame and `framing_errors >= 1`; a frame whose footer is missing entirely is NOT recovered; recovery is not attempted when the payload after the early footer is not a whole number of 5-byte targets; the `radar_targets` fixture gives more reports than the 25 pinned before (assert the new exact numbers) and `framing_errors` drops accordingly.
+- [ ] **Step 2: Run, expect FAIL.**
+- [ ] **Step 3: Implement.** Do not modify the `ld2451` driver. Pre-scan each data frame candidate from the raw reads: when the decoder would resync because the footer check failed, look for the footer at `declared_end - 5k` (k = 1 up to the declared target count) and accept the smallest k whose payload is a whole number of targets; keep this logic in one small function with a docstring citing the survey evidence. Preserve `t_rx_ns` of the read carrying the first header byte.
+- [ ] **Step 4: Run, expect PASS.** **Commit** `feat: recover short radar data frames`.
+
+---
+
 ### Task 6: Message definitions, mapping, camera info and tf
 
 **Files:**
