@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from mcap.reader import make_reader
@@ -132,7 +133,8 @@ def test_exit_1_and_no_output_file_on_failure(
     assert main(["convert", str(src), "-o", str(out)]) == 1
     cap = capsys.readouterr()
     assert cap.out == ""
-    assert "failed:" in cap.err and "--allow-prefix converts the common prefix" in cap.err
+    assert "failed:" in cap.err and "--allow-prefix to convert the common prefix" in cap.err
+    assert cap.err.count("--allow-prefix") == 1  # hint not appended twice
     assert "1 failed" in cap.err
     assert list(out.iterdir()) == []  # neither final nor .tmp
 
@@ -431,3 +433,110 @@ def test_per_segment_collision_detected(tmp_path: Path, capsys: pytest.CaptureFi
     out = tmp_path / "out"
     assert main(["convert", str(a), str(b), "-o", str(out), "--per-segment"]) == 2
     assert "s000066-seg0000.mcap" in capsys.readouterr().err
+
+
+class _ScriptedPool:
+    """Stand-in for ProcessPoolExecutor: call ``n`` (1-based) does what ``script[n]`` says.
+
+    "run" runs the job in-process, "crash" fails the future with BrokenProcessPool (after
+    ``on_crash``), "raise" makes submit() itself raise OSError. Missing entries run.
+    """
+
+    script: ClassVar[dict[int, str]] = {}
+    on_crash: ClassVar[object] = None
+
+    def __init__(self, max_workers: int) -> None:
+        self.n = 0
+
+    def __enter__(self) -> "_ScriptedPool":
+        return self
+
+    def __exit__(self, *a: object) -> None:
+        return None
+
+    def submit(self, fn, *args):  # type: ignore[no-untyped-def]
+        from concurrent.futures import Future
+        from concurrent.futures.process import BrokenProcessPool
+
+        self.n += 1
+        action = self.script.get(self.n, "run")
+        if action == "raise":
+            raise OSError(11, "Resource temporarily unavailable")
+        fut: Future[object] = Future()
+        if action == "crash":
+            if callable(self.on_crash):
+                self.on_crash()
+            fut.set_exception(BrokenProcessPool("a process in the pool was terminated"))
+        else:
+            fut.set_result(fn(*args))
+        return fut
+
+
+def _three_sessions(tmp_path: Path) -> list[Path]:
+    batch = tmp_path / "batch"
+    batch.mkdir()
+    a = _copy("complete_2seg", batch, "a")
+    b = _copy("interrupted", batch, "b")
+    c = _copy("in_progress_unlisted", batch, "c")
+    return [a, b, c]
+
+
+def test_submit_failure_reports_not_run_and_keeps_summary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from radar_cam_2_mcap import cli
+
+    monkeypatch.setattr(_ScriptedPool, "script", {2: "raise"})
+    monkeypatch.setattr(cli, "ProcessPoolExecutor", _ScriptedPool)
+    _a, b, c = _three_sessions(tmp_path)
+    out = tmp_path / "out"
+    assert main(["convert", str(tmp_path / "batch"), "-o", str(out), "--jobs", "2"]) == 1
+    cap = capsys.readouterr()
+    assert "Traceback" not in cap.err
+    assert cap.out.splitlines() == [str(out / "s000066.mcap")]
+    assert f"failed: {b}: NotRun: not run: pool broken (OSError" in cap.err
+    assert f"failed: {c}: NotRun: not run: pool broken" in cap.err
+    assert "1 converted, 1 with warnings, 2 failed" in cap.err
+
+
+def test_pool_creation_failure_reports_every_session_not_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from radar_cam_2_mcap import cli
+
+    def boom(max_workers: int) -> None:
+        raise OSError(24, "Too many open files")
+
+    monkeypatch.setattr(cli, "ProcessPoolExecutor", boom)
+    _three_sessions(tmp_path)
+    assert main(["convert", str(tmp_path / "batch"), "-o", str(tmp_path / "o"), "--jobs", "2"]) == 1
+    err = capsys.readouterr().err
+    assert err.count("NotRun: not run: pool broken (OSError") == 3
+    assert "0 converted, 0 with warnings, 3 failed" in err
+
+
+def test_crashed_worker_temp_files_removed_and_pending_not_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from radar_cam_2_mcap import cli
+
+    out = tmp_path / "out"
+    leftover = out / "s000030.mcap.k3j9x.tmp"
+    unrelated = out / "notes.tmp"
+
+    def write_leftover() -> None:  # what a SIGKILLed worker leaves behind
+        out.mkdir(exist_ok=True)
+        leftover.write_bytes(b"partial")
+        unrelated.write_bytes(b"keep")
+
+    monkeypatch.setattr(_ScriptedPool, "script", {2: "crash"})
+    monkeypatch.setattr(_ScriptedPool, "on_crash", staticmethod(write_leftover))
+    monkeypatch.setattr(cli, "ProcessPoolExecutor", _ScriptedPool)
+    _a, b, c = _three_sessions(tmp_path)
+    assert main(["convert", str(tmp_path / "batch"), "-o", str(out), "--jobs", "2"]) == 1
+    cap = capsys.readouterr()
+    assert not leftover.exists() and unrelated.exists()
+    assert f"failed: {b}: BrokenProcessPool: worker crashed" in cap.err
+    assert "removed 1 leftover temp file" in cap.err
+    assert f"failed: {c}: NotRun: not run: pool broken" in cap.err
+    assert cap.out.splitlines() == [str(out / "s000066.mcap")]

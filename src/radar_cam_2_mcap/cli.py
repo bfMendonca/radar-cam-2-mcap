@@ -12,7 +12,7 @@ import argparse
 import logging
 import sys
 from collections.abc import Sequence
-from concurrent.futures import Future, ProcessPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, BrokenExecutor, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -24,6 +24,7 @@ from radar_cam_2_mcap.convert import (
     OutputExistsError,
     convert_session,
     output_paths,
+    temp_glob,
 )
 from radar_cam_2_mcap.session import SessionError, load_session
 from radar_cam_2_mcap.video import FrameCountMismatch
@@ -89,7 +90,11 @@ def _run_one(session: str, out_dir: str, cfg: Config, opts: ConvertOptions) -> _
         res = convert_session(Path(session), Path(out_dir), cfg, opts)
     except Exception as exc:
         msg = str(exc) or type(exc).__name__
-        if isinstance(exc, FrameCountMismatch) and not opts.allow_prefix:
+        if (
+            isinstance(exc, FrameCountMismatch)
+            and not opts.allow_prefix
+            and "--allow-prefix" not in msg
+        ):
             msg += " (--allow-prefix converts the common prefix of the frames)"
         elif isinstance(exc, (FileExistsError, NotADirectoryError)):
             msg += f" (is the output directory {out_dir} an existing file?)"
@@ -114,6 +119,81 @@ def _await(future: Future[_Outcome], session: str) -> _Outcome:
             error_type=type(exc).__name__,
             error=f"worker crashed: {exc}" if str(exc) else "worker crashed",
         )
+
+
+def _not_run(session: str, reason: str) -> _Outcome:
+    return _Outcome(session, error_type="NotRun", error=f"not run: pool broken ({reason})")
+
+
+def _remove_temps(outcome: _Outcome, finals: Sequence[Path]) -> None:
+    """Delete temp files a killed worker left for ``finals`` (cleanup in it never ran)."""
+    removed = 0
+    for final in finals:
+        for tmp in final.parent.glob(temp_glob(final)):
+            try:
+                tmp.unlink()
+                removed += 1
+            except OSError:
+                pass
+    if removed:
+        outcome.error = f"{outcome.error}; removed {removed} leftover temp file(s)"
+
+
+def _run_pool(
+    sessions: Sequence[Path],
+    out_dir: str,
+    cfg: Config,
+    opts: ConvertOptions,
+    jobs: int,
+    plan: dict[Path, list[Path]],
+) -> list[_Outcome]:
+    """Run sessions in worker processes, at most ``jobs`` submitted at a time.
+
+    Keeping only ``jobs`` futures in flight means a submitted session is running (or about
+    to), so when the pool breaks the sessions never submitted are reported "not run" rather
+    than "worker crashed". Submit and pool errors become failed outcomes, never a traceback.
+    """
+    results: dict[int, _Outcome] = {}
+    submitted: set[int] = set()
+    broken: str | None = None
+    try:
+        with ProcessPoolExecutor(max_workers=jobs) as pool:
+            pending: dict[Future[_Outcome], int] = {}
+            nxt = 0
+            while True:
+                while broken is None and nxt < len(sessions) and len(pending) < jobs:
+                    try:
+                        fut = pool.submit(_run_one, str(sessions[nxt]), out_dir, cfg, opts)
+                    except Exception as exc:
+                        broken = f"{type(exc).__name__}: {exc}"
+                        break
+                    pending[fut] = nxt
+                    submitted.add(nxt)
+                    nxt += 1
+                if not pending:
+                    break
+                done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                for fut in done:
+                    i = pending.pop(fut)
+                    results[i] = _await(fut, str(sessions[i]))
+                    err = fut.exception()
+                    if err is not None:
+                        _remove_temps(results[i], plan.get(sessions[i], []))
+                        if broken is None and isinstance(err, BrokenExecutor):
+                            broken = f"{type(err).__name__}: {err}"
+    except Exception as exc:  # pool creation or shutdown failed
+        broken = broken or f"{type(exc).__name__}: {exc}"
+    out: list[_Outcome] = []
+    for i, s in enumerate(sessions):
+        if i in results:
+            out.append(results[i])
+        elif i in submitted:
+            crashed = _Outcome(str(s), error_type="WorkerError", error=f"worker lost ({broken})")
+            _remove_temps(crashed, plan.get(s, []))
+            out.append(crashed)
+        else:
+            out.append(_not_run(str(s), broken or "unknown error"))
+    return out
 
 
 def _collect(
@@ -228,9 +308,7 @@ def _convert(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     out_dir = str(args.output_dir)
     results: list[_Outcome]
     if args.jobs > 1 and len(sessions) > 1:
-        with ProcessPoolExecutor(max_workers=args.jobs) as pool:
-            futures = [pool.submit(_run_one, str(s), out_dir, cfg, opts) for s in sessions]
-            results = [_await(f, str(s)) for f, s in zip(futures, sessions, strict=True)]
+        results = _run_pool(sessions, out_dir, cfg, opts, args.jobs, plan)
     else:
         results = [_run_one(str(s), out_dir, cfg, opts) for s in sessions]
     outcomes = [*bad, *results]
