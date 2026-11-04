@@ -11,7 +11,7 @@ import argparse
 import logging
 import sys
 from collections.abc import Sequence
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import Future, ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -84,6 +84,8 @@ def _run_one(session: str, out_dir: str, cfg: Config, opts: ConvertOptions) -> _
         msg = str(exc) or type(exc).__name__
         if isinstance(exc, FrameCountMismatch) and not opts.allow_prefix:
             msg += " (--allow-prefix converts the common prefix of the frames)"
+        elif isinstance(exc, (FileExistsError, NotADirectoryError)):
+            msg += f" (is the output directory {out_dir} an existing file?)"
         elif isinstance(exc, OutputExistsError) and "--overwrite" not in msg:
             msg += " (pass --overwrite to replace existing output)"
         return _Outcome(session, error_type=type(exc).__name__, error=msg)
@@ -93,6 +95,18 @@ def _run_one(session: str, out_dir: str, cfg: Config, opts: ConvertOptions) -> _
         warnings=list(res.warnings),
         notes=list(res.notes),
     )
+
+
+def _await(future: Future[_Outcome], session: str) -> _Outcome:
+    """Result of a worker; a crashed worker or pool becomes a failed outcome for its session."""
+    try:
+        return future.result()
+    except Exception as exc:
+        return _Outcome(
+            session,
+            error_type=type(exc).__name__,
+            error=f"worker crashed: {exc}" if str(exc) else "worker crashed",
+        )
 
 
 def _collect(
@@ -178,7 +192,7 @@ def _convert(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     if args.jobs > 1 and len(sessions) > 1:
         with ProcessPoolExecutor(max_workers=args.jobs) as pool:
             futures = [pool.submit(_run_one, str(s), out_dir, cfg, opts) for s in sessions]
-            results = [f.result() for f in futures]  # input order
+            results = [_await(f, str(s)) for f, s in zip(futures, sessions, strict=True)]
     else:
         results = [_run_one(str(s), out_dir, cfg, opts) for s in sessions]
     outcomes = [*bad, *results]

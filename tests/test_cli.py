@@ -98,7 +98,7 @@ def clean_session(tmp_path: Path) -> Path:
 
 def test_realistic_segment_gap_is_a_note_not_a_warning(clean_session: Path, tmp_path: Path) -> None:
     res = convert_session(clean_session, tmp_path / "o", Config(), ConvertOptions())
-    assert any(n.startswith("segment gap 0->1: 35") for n in res.notes), res.notes
+    assert any(n == "segment gap 0->1: 3500000000 ns" for n in res.notes), res.notes
     assert not any("segment gap" in w for w in res.warnings)
 
 
@@ -162,7 +162,7 @@ def test_overwrite_replaces(tmp_path: Path) -> None:
     out.mkdir()
     target = out / "s000066.mcap"
     target.write_bytes(b"old")
-    assert main(["convert", str(src), "-o", str(out), "--overwrite"]) in (0, 3)
+    assert main(["convert", str(src), "-o", str(out), "--overwrite"]) == 3  # 299 s gap WARN
     assert target.read_bytes() != b"old"
     assert not list(out.glob("*.tmp"))
 
@@ -332,3 +332,76 @@ def test_python_dash_m_version() -> None:
         check=True,
     )
     assert __version__ in res.stdout
+
+
+def test_worker_crash_is_a_failure_and_keeps_finished_results(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fake executor runs the first session for real and breaks the pool for the second.
+
+    A real os._exit in a worker cannot be injected under the spawn start method (the child
+    re-imports the module, so monkeypatches do not reach it).
+    """
+    from concurrent.futures import Future
+    from concurrent.futures.process import BrokenProcessPool
+
+    from radar_cam_2_mcap import cli
+
+    class FakePool:
+        def __init__(self, max_workers: int) -> None:
+            self.n = 0
+
+        def __enter__(self) -> "FakePool":
+            return self
+
+        def __exit__(self, *a: object) -> None:
+            return None
+
+        def submit(self, fn, *args):  # type: ignore[no-untyped-def]
+            fut: Future[object] = Future()
+            self.n += 1
+            if self.n == 1:
+                fut.set_result(fn(*args))
+            else:
+                fut.set_exception(BrokenProcessPool("a process in the pool was terminated"))
+            return fut
+
+    monkeypatch.setattr(cli, "ProcessPoolExecutor", FakePool)
+    a = _copy("complete_2seg", tmp_path)
+    b = _copy("interrupted", tmp_path)
+    out = tmp_path / "out"
+    assert main(["convert", str(a), str(b), "-o", str(out), "--jobs", "2"]) == 1
+    cap = capsys.readouterr()
+    assert cap.out.splitlines() == [str(out / "s000066.mcap")]
+    assert f"failed: {b}: BrokenProcessPool: worker crashed" in cap.err
+    assert "Traceback" not in cap.err
+    assert "1 converted, 1 with warnings, 1 failed" in cap.err
+
+
+def test_unknown_flag_exits_2() -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["convert", "x", "-o", "y", "--bogus"])
+    assert exc.value.code == 2
+
+
+def test_output_dir_that_is_a_file_fails_cleanly(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = _copy("interrupted", tmp_path)
+    target = tmp_path / "afile"
+    target.write_text("x")
+    assert main(["convert", str(src), "-o", str(target)]) == 1
+    cap = capsys.readouterr()
+    assert cap.out == "" and "Traceback" not in cap.err
+    assert "failed:" in cap.err and "afile" in cap.err
+    assert "existing file" in cap.err
+
+
+def test_quiet_success_with_notes_prints_only_paths(
+    clean_session: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "o"
+    assert main(["convert", str(clean_session), "-o", str(out), "--quiet"]) == 0
+    cap = capsys.readouterr()
+    assert cap.out.splitlines() == [str(out / "s000066.mcap")]
+    assert "ok:" not in cap.err and "note:" not in cap.err
