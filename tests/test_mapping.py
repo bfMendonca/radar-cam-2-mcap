@@ -65,15 +65,30 @@ def test_radar_scan_maps_target_units_and_signs() -> None:
     assert ret["range"] == 25.0
     assert ret["azimuth"] == pytest.approx(math.radians(10))
     assert ret["elevation"] == 0.0
-    assert ret["doppler_velocity"] == -10.0
+    assert ret["doppler_velocity"] == 10.0  # driver approaching=True is inverted by default
     assert ret["amplitude"] == 77.0
     assert scan["header"] == {"stamp": mapping.STAMP(T0), "frame_id": "radar_link"}
 
 
-def test_receding_target_has_positive_doppler() -> None:
-    rep = _report(_target(approaching=False))
-    (ret,) = mapping.radar_scan(rep, T0, "radar_link", RadarConfig())["returns"]
-    assert ret["doppler_velocity"] == 10.0
+def test_default_inverts_driver_direction() -> None:
+    # Empirical (real session s000060): driver approaching=False means range falling.
+    rep = _report(_target(approaching=False), _target(approaching=True))
+    a, b = mapping.radar_scan(rep, T0, "radar_link", RadarConfig())["returns"]
+    assert a["doppler_velocity"] == -10.0
+    assert b["doppler_velocity"] == 10.0
+
+
+def test_invert_direction_false_keeps_driver_sign() -> None:
+    rep = _report(_target(approaching=True), _target(approaching=False))
+    cfg = RadarConfig(invert_direction=False)
+    a, b = mapping.radar_scan(rep, T0, "radar_link", cfg)["returns"]
+    assert a["doppler_velocity"] == -10.0
+    assert b["doppler_velocity"] == 10.0
+
+
+def test_invert_direction_does_not_touch_status() -> None:
+    rep = _report(_target(approaching=True))
+    assert mapping.radar_status(rep, T0, 7)["approach_alarm"] == rep.approach_alarm
 
 
 def test_empty_report_gives_empty_returns() -> None:
@@ -207,8 +222,8 @@ def test_msgdefs_parse() -> None:
     assert img.header.stamp.sec == 1_700_000_000
     scan = by_type["radar_msgs/RadarScan"]
     assert len(scan.returns) == 2
-    assert scan.returns[0].doppler_velocity == pytest.approx(-10.0)
-    assert scan.returns[1].doppler_velocity == pytest.approx(10.0)
+    assert scan.returns[0].doppler_velocity == pytest.approx(10.0)
+    assert scan.returns[1].doppler_velocity == pytest.approx(-10.0)
     assert by_type["sensor_msgs/CameraInfo"].k[0] == pytest.approx(1285.7)
     assert by_type["radar_cam_msgs/CameraMetadata"].exposure_us == 39891
     assert by_type["radar_cam_msgs/RadarStatus"].target_count == 2

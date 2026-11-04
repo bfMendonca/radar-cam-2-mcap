@@ -238,6 +238,7 @@ Real-time playback was not done.
    further per the task rules. Command: see "Commands" (`dirsign.py`). Effect: Foxglove users
    and any downstream consumer get the wrong sign convention in `doppler_velocity` and
    `RadarStatus.approach_alarm` would be affected as well.
+   Addressed in `radar_scan` by config `radar.invert_direction` (default true; `RadarStatus` untouched).
 2. **Frame-count check happens late** for damaged sessions (minutes of conversion before the
    `FrameCountMismatch` failure; see above). Optional improvement: count all segments first.
 3. **Timing anomaly**: 20x slower conversions after the first runs on the same machine and data

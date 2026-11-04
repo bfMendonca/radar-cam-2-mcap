@@ -70,3 +70,20 @@ def test_default_intrinsics_reproduce_vendor_field_of_view() -> None:
     assert hfov == pytest.approx(53.50, abs=0.05)
     assert vfov == pytest.approx(41.41, abs=0.05)
     assert cam.calibrated is False
+
+
+def test_invert_direction_default_and_override(tmp_path: Path) -> None:
+    assert load_config(None).radar.invert_direction is True
+    path = tmp_path / "c.toml"
+    path.write_text("[radar]\ninvert_direction = false\n")
+    cfg = load_config(path)
+    assert cfg.radar.invert_direction is False
+    assert cfg.radar.angle_sign == 1
+
+
+def test_invert_direction_wrong_type_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "c.toml"
+    for bad in ("1", '"yes"'):
+        path.write_text(f"[radar]\ninvert_direction = {bad}\n")
+        with pytest.raises(ConfigError):
+            load_config(path)

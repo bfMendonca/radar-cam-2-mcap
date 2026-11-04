@@ -86,6 +86,9 @@ class RadarConfig:
     angle_sign: int = 1
     # Recover data frames whose count/length overstate the targets present (footer early).
     recover_short_frames: bool = True
+    # The LD2451 driver's `approaching` flag (direction byte 00) is empirically inverted on real
+    # session s000060; the driver check is unverified. Set False if the driver is fixed.
+    invert_direction: bool = True
 
 
 @dataclass(frozen=True)

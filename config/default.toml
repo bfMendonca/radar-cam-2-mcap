@@ -36,6 +36,9 @@ frame_radar = "radar_link"
 [radar]
 angle_sign = 1       # UNVERIFIED: which direction a positive LD2451 angle means
 recover_short_frames = true  # keep data frames whose count/length overstate the targets present
+# Empirically derived from real session s000060 (driver check unverified): the driver's
+# `approaching` flag is inverted. Set false if the driver is fixed.
+invert_direction = true
 
 [time]
 crosscheck_tolerance_ms = 50.0

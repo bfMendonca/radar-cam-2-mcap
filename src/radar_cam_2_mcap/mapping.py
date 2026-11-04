@@ -115,15 +115,19 @@ def radar_scan(
     range is metres; azimuth is ``cfg.angle_sign * radians(angle_deg)`` (positive anticlockwise,
     REP-103; the LD2451 angle sign is UNVERIFIED, so the default ``angle_sign = 1`` is an
     assumption); elevation is 0.0 (unknown, the radar is 2D); doppler_velocity is m/s, negative
-    for approaching targets and positive for receding ones; amplitude is the raw LD2451 SNR, not
+    for approaching targets (physically falling range) and positive for receding ones. The driver's
+    ``approaching`` flag is inverted on real session s000060, so the effective flag is
+    ``t.approaching XOR cfg.invert_direction`` (default true; ``RadarStatus`` is not affected);
+    amplitude is the raw LD2451 SNR, not
     calibrated dB.
     """
+    flip = cfg.invert_direction
     returns = [
         {
             "range": float(t.distance_m),
             "azimuth": cfg.angle_sign * math.radians(t.angle_deg),
             "elevation": 0.0,
-            "doppler_velocity": (-1.0 if t.approaching else 1.0) * t.speed_kmh / 3.6,
+            "doppler_velocity": (-1.0 if t.approaching != flip else 1.0) * t.speed_kmh / 3.6,
             "amplitude": float(t.snr),
         }
         for t in report.targets
