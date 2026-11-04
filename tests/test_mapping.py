@@ -212,7 +212,7 @@ def test_msgdefs_parse() -> None:
     w = Writer(buf)
     for i, (dt, text) in enumerate(mapping.MSGDEFS.items()):
         w.write_message(f"/t{i}", w.register_msgdef(dt, text), msgs[dt], log_time=T0 + i)
-    w.finish()
+    w.finish()  # type: ignore[no-untyped-call]
     buf.seek(0)
     got = {m.channel.topic: m.ros_msg for m in read_ros2_messages(buf)}
     assert len(got) == len(mapping.MSGDEFS)

@@ -4,6 +4,7 @@ import itertools
 import logging
 import random
 from pathlib import Path
+from typing import Any
 
 import ld2451
 from ld2451.protocol import encode_report
@@ -340,7 +341,7 @@ def _stream_pieces(rng: random.Random) -> list[bytes]:
     return pieces
 
 
-def _results(stream: bytes, cuts: list[int]) -> list[tuple[int, int, tuple, bytes]]:
+def _results(stream: bytes, cuts: list[int]) -> list[tuple[int, int, tuple[Any, ...], bytes]]:
     """(offset of first byte's read start mapped to stream offset, kind, targets, raw)."""
     dec = RecoveringFrameDecoder()
     bounds = [0, *cuts, len(stream)]
@@ -367,7 +368,10 @@ def test_results_independent_of_chunking() -> None:
         singles = _results(stream, list(range(1, len(stream))))
         rnd_cuts = sorted(rng.sample(range(1, len(stream)), min(10, len(stream) - 1)))
         rand = _results(stream, rnd_cuts)
-        strip = lambda r: [(c, t, raw) for _, c, t, raw in r]  # noqa: E731
+
+        def strip(r: list[tuple[int, int, tuple[Any, ...], bytes]]) -> list[Any]:
+            return [(c, t, raw) for _, c, t, raw in r]
+
         assert strip(one) == strip(singles) == strip(rand), seed
         # t_rx_ns: the read carrying the first byte of each frame.
         for res, cuts in ((singles, list(range(1, len(stream)))), (rand, rnd_cuts)):
