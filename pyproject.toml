@@ -6,17 +6,19 @@ build-backend = "setuptools.build_meta"
 name = "radar-cam-2-mcap"
 version = "0.1.0"
 description = "Convert a radar-cam-recorder session folder into a ROS 2 MCAP file"
+readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Bruno Mendonça" }]
 keywords = ["mcap", "ros2", "radar", "ld2451", "camera", "converter"]
 dependencies = [
-    "mcap",
-    "mcap-ros2-support",
-    "av",
+    "mcap>=1.6",
+    "mcap-ros2-support>=0.6",  # Writer.add_metadata
+    "av>=12",
     "pillow",
-    "numpy",
-    "ld2451",
+    "numpy",  # not imported directly; PyAV's to_ndarray and Pillow's fromarray need it
+    # Pinned by commit: radar.RecoveringFrameDecoder subclasses private driver internals.
+    "ld2451 @ git+https://github.com/bfMendonca/ld2451.git@c0ea789391d37b0d98564b0f445ab940812fb476",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -28,6 +30,12 @@ classifiers = [
     "Typing :: Typed",
 ]
 
+[project.urls]
+Homepage = "https://github.com/bfMendonca/radar-cam-2-mcap"
+Repository = "https://github.com/bfMendonca/radar-cam-2-mcap"
+Issues = "https://github.com/bfMendonca/radar-cam-2-mcap/issues"
+Changelog = "https://github.com/bfMendonca/radar-cam-2-mcap/blob/main/CHANGELOG.md"
+
 [project.scripts]
 radar-cam-2-mcap = "radar_cam_2_mcap.cli:main"
 
@@ -37,9 +45,6 @@ dev = ["ruff>=0.5", "mypy>=1.10", "pytest-cov>=4"]
 
 [tool.uv]
 default-groups = ["test", "dev"]
-
-[tool.uv.sources]
-ld2451 = { git = "https://github.com/bfMendonca/ld2451.git", rev = "c0ea789391d37b0d98564b0f445ab940812fb476" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

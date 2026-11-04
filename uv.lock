@@ -891,10 +891,10 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "av" },
+    { name = "av", specifier = ">=12" },
     { name = "ld2451", git = "https://github.com/bfMendonca/ld2451.git?rev=c0ea789391d37b0d98564b0f445ab940812fb476" },
-    { name = "mcap" },
-    { name = "mcap-ros2-support" },
+    { name = "mcap", specifier = ">=1.6" },
+    { name = "mcap-ros2-support", specifier = ">=0.6" },
     { name = "numpy" },
     { name = "pillow" },
 ]
