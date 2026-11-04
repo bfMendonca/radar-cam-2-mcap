@@ -35,7 +35,9 @@ def test_fragmented_data_frame_decodes_once_with_first_byte_time(tmp_path: Path)
     assert len(reports[0].targets) == 2
     assert stats.reads == 3
     assert stats.data_frames == 1
-    assert stats.invalid_frames == 0
+    assert stats.framing_errors == 0
+    assert stats.bad_payloads == 0
+    assert stats.bytes_discarded == 1  # the stray f5
 
 
 def test_command_ack_frames_are_counted_not_reported(tmp_path: Path) -> None:
@@ -67,6 +69,8 @@ def test_partial_last_line_ignored(tmp_path: Path) -> None:
     reports = list(iter_radar_reports(path, stats))
     assert len(reports) == 1
     assert stats.reads == 1
+    assert stats.partial_lines == 1
+    assert stats.garbled_lines == 0
 
     # Even-length truncation of a full line must not produce a second report.
     path2 = _write(tmp_path / "r2.csv", [(1, full)], tail=f"2,{full.hex()}")
@@ -80,9 +84,12 @@ def test_garbled_line_skipped_with_warning(tmp_path: Path, caplog: object) -> No
     import pytest
 
     assert isinstance(caplog, pytest.LogCaptureFixture)
+    stats = RadarStats()
     with caplog.at_level(logging.WARNING):
-        reports = list(iter_radar_reports(path, RadarStats()))
+        reports = list(iter_radar_reports(path, stats))
     assert len(reports) == 1
+    assert stats.garbled_lines == 1
+    assert stats.partial_lines == 0
     assert "garbled" in caplog.text
 
 
@@ -99,7 +106,7 @@ def test_invalid_payload_counted(tmp_path: Path) -> None:
         iter_radar_reports(_write(tmp_path / "r.csv", [(1, bad), (2, encode_report([]))]), stats)
     )
     assert len(reports) == 1
-    assert stats.invalid_frames == 1
+    assert stats.bad_payloads == 1
 
 
 def test_shared_decoder_joins_frame_across_files(tmp_path: Path) -> None:
@@ -129,15 +136,21 @@ def test_real_fixture_decodes_targets() -> None:
     stats = RadarStats()
     reports = list(iter_radar_reports(path, stats))
     targets = [t for r in reports for t in r.targets]
-    # Counts observed once by running iter_radar_reports over the committed fixture
-    # and cross-checked against a bare ld2451.FrameDecoder (25 data, 6 command frames,
-    # 16 bad footers from the torn frame, 371 bytes discarded); pinned against regressions.
+    # Counts observed once by running iter_radar_reports over the committed fixture.
+    # Cross-check: a naive header..footer scan finds 42 spans, 25 with a consistent declared
+    # length (decoded here) and 17 whose declared length is 5 bytes (one target) longer than
+    # the bytes on the wire. The decoder cannot frame those; each causes a bad-footer resync
+    # (16 seen, the 17th is still buffered at end of file). So framing_errors counts resync
+    # events, not distinct frames.
     assert len(reports) == 25
     assert len(targets) == 41
     assert stats.data_frames == 25
     assert stats.ack_frames == 6
     assert stats.reads == 98
-    assert stats.invalid_frames == 16
+    assert stats.framing_errors == 16
+    assert stats.bad_payloads == 0
+    assert stats.partial_lines == 0
+    assert stats.garbled_lines == 0
     assert stats.bytes_discarded == 371
     assert targets
     for t in targets:

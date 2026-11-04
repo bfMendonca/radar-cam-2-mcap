@@ -19,9 +19,18 @@ def anchors() -> list[ClockAnchor]:
 
 def make_session(source: str | None, ntp: bool) -> SessionInfo:
     return SessionInfo(
-        path=Path("."), session_id="s", state="stopped", stop_reason=None,
-        boot_id=None, ntp_synced=ntp, wall_clock_source=source, anchors=[],
-        recorder_config={}, devices={}, segments=[], listed_segment_indexes=[],
+        path=Path("."),
+        session_id="s",
+        state="stopped",
+        stop_reason=None,
+        boot_id=None,
+        ntp_synced=ntp,
+        wall_clock_source=source,
+        anchors=[],
+        recorder_config={},
+        devices={},
+        segments=[],
+        listed_segment_indexes=[],
     )
 
 
