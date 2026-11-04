@@ -11,13 +11,14 @@ compression = "zstd"          # "zstd", "lz4" or "none"
 chunk_size = 4194304          # bytes
 
 [camera]
-# Uncalibrated OV5647 (v1.3), 1296x972 (2x2 binned). Figures from the vendor datasheet, unverified.
+# Uncalibrated OV5647 (v1.3), 1296x972 (2x2 binned). fx = fy = 3.6 mm / 2.8 um = 1285.7 px (vendor
+# datasheet figures, unverified); gives the vendor FoV 53.50 x 41.41 degrees.
 width = 1296
 height = 972
-k = [1286.0, 0.0, 648.0, 0.0, 1286.0, 486.0, 0.0, 0.0, 1.0]
+k = [1285.7, 0.0, 648.0, 0.0, 1285.7, 486.0, 0.0, 0.0, 1.0]
 d = [0.0, 0.0, 0.0, 0.0, 0.0]
 r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-p = [1286.0, 0.0, 648.0, 0.0, 0.0, 1286.0, 486.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+p = [1285.7, 0.0, 648.0, 0.0, 0.0, 1285.7, 486.0, 0.0, 0.0, 0.0, 1.0, 0.0]
 distortion_model = "plumb_bob"
 calibrated = false
 

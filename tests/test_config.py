@@ -58,3 +58,15 @@ def test_recover_short_frames_default_and_override(tmp_path: Path) -> None:
     cfg = load_config(path)
     assert cfg.radar.recover_short_frames is False
     assert cfg.radar.angle_sign == 1
+
+
+def test_default_intrinsics_reproduce_vendor_field_of_view() -> None:
+    # Vendor-spec-derived and uncalibrated: fx = fy = 3.6 mm / 2.8 um (2x2 binned) = 1285.7 px.
+    cam = load_config(None).camera
+    fx, cx, fy, cy = cam.k[0], cam.k[2], cam.k[4], cam.k[5]
+    assert (fx, fy) == (1285.7, 1285.7)
+    hfov = math.degrees(2 * math.atan(cx / fx))
+    vfov = math.degrees(2 * math.atan(cy / fy))
+    assert hfov == pytest.approx(53.50, abs=0.05)
+    assert vfov == pytest.approx(41.41, abs=0.05)
+    assert cam.calibrated is False

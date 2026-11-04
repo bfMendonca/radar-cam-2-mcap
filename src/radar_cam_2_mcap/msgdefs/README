@@ -1,0 +1,23 @@
+Message definitions used in the output MCAP.
+
+Vendored verbatim (byte for byte, comments included), fetched 2026-11-03:
+- RadarReturn.msg, RadarScan.msg: https://github.com/ros-perception/radar_msgs (branch ros2,
+  radar_msgs/msg/)
+- CompressedImage.msg, CameraInfo.msg, RegionOfInterest.msg: https://github.com/ros2/common_interfaces
+  (branch jazzy, sensor_msgs/msg/)
+- Header.msg: common_interfaces, branch jazzy, std_msgs/msg/
+- Transform.msg, TransformStamped.msg, Vector3.msg, Quaternion.msg: common_interfaces, branch
+  jazzy, geometry_msgs/msg/
+- Time.msg: https://github.com/ros2/rcl_interfaces (branch jazzy, builtin_interfaces/msg/)
+- Log.msg: https://github.com/ros2/rcl_interfaces (branch jazzy, rcl_interfaces/msg/)
+- TFMessage.msg: https://github.com/ros2/geometry2 (branch jazzy, tf2_msgs/msg/)
+
+Written for this project (package radar_cam_msgs): CameraMetadata.msg, RadarStatus.msg.
+
+Radar mapping notes:
+- RadarReturn has no SNR field. The LD2451 SNR goes into `amplitude` as the raw value, not
+  calibrated dB (upstream documents amplitude as dB).
+- Doppler velocity is positive for receding targets and negative for approaching ones.
+- Azimuth is positive anticlockwise (REP-103). The LD2451 angle sign is UNVERIFIED (the vendor
+  protocol PDF could not be read), so `angle_sign = 1` is assumed.
+- Elevation is 0 (unknown; the radar is 2D).

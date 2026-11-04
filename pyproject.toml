@@ -45,7 +45,7 @@ ld2451 = { git = "https://github.com/bfMendonca/ld2451.git", rev = "c0ea789391d3
 where = ["src"]
 
 [tool.setuptools.package-data]
-radar_cam_2_mcap = ["py.typed"]
+radar_cam_2_mcap = ["py.typed", "msgdefs/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
