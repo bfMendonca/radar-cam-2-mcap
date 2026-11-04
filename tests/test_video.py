@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import itertools
+import re
 import shutil
 from pathlib import Path
 
@@ -78,17 +79,42 @@ def test_count_h264_frames_matches_meta_on_complete_fixture() -> None:
         )
 
 
-def test_count_h264_frames_across_chunk_boundary(tmp_path: Path) -> None:
-    # slice NALs (type 1 and 5) and a non-slice NAL (type 7), start codes at odd offsets
-    data = (
-        b"\x00\x00\x01\x65aa"
-        + b"\x00\x00\x01\x67bb"
-        + b"\x00\x00\x00\x01\x41cc"
-        + b"\x00\x00\x01\x41"
+def _reference_count(data: bytes) -> int:
+    return sum(
+        1
+        for m in re.finditer(rb"\x00\x00\x01(.)", data, re.DOTALL)
+        if m.group(1)[0] & 0x1F in (1, 5)
     )
-    p = tmp_path / "x.h264"
-    p.write_bytes(data)
-    assert count_h264_frames(p) == 3
+
+
+_SYNTHETIC = [
+    b"\x00\x00\x01\x65aa\x00\x00\x01\x67bb\x00\x00\x00\x01\x41cc\x00\x00\x01\x41",
+    b"\x00\x00\x00\x01\x67x\x00\x00\x00\x01\x68y\x00\x00\x00\x01\x65z\x00\x00\x01\x01",
+    b"\x00\x00\x01\x41\x00\x00\x01\x41\x00\x00\x01\x65",
+    b"zz\x00\x00\x01\x21q\x00\x00\x02\x01\x00\x00\x01\x25",
+]
+
+
+@pytest.mark.parametrize("chunk_size", [1, 2, 3, 4, 5, 7])
+@pytest.mark.parametrize("data", _SYNTHETIC)
+def test_count_h264_frames_across_chunk_boundary(
+    tmp_path: Path, data: bytes, chunk_size: int
+) -> None:
+    expected = _reference_count(data)
+    assert expected > 0
+    # Shift the stream so each start code is split at every possible offset.
+    for pad in range(8):
+        p = tmp_path / "x.h264"
+        p.write_bytes(b"\xaa" * pad + data)
+        assert count_h264_frames(p, chunk_size=chunk_size) == expected
+
+
+@pytest.mark.parametrize("chunk_size", [1000, 4093, 65536])
+def test_count_h264_frames_small_chunks_on_fixture(chunk_size: int) -> None:
+    h264 = FIX / "0000.h264"
+    n_meta = len(read_frame_meta(FIX / "0000.meta.json"))
+    assert count_h264_frames(h264) == n_meta
+    assert count_h264_frames(h264, chunk_size=chunk_size) == n_meta
 
 
 def test_decoded_frames_pair_with_meta_in_order() -> None:
@@ -103,6 +129,10 @@ def test_decoded_frames_pair_with_meta_in_order() -> None:
     assert all(f.fmt == "jpeg" and f.data[:2] == b"\xff\xd8" for f in frames)
     assert all(f.width == 1296 and f.height == 972 for f in frames)
     assert warnings == []
+    assert frames[0].meta.sensor_ts_ns == 249076560000
+    assert frames[-1].meta.sensor_ts_ns == metas[-1].sensor_ts_ns
+    assert [f.meta.sensor_ts_ns for f in frames] == [m.sensor_ts_ns for m in metas]
+    assert len({f.data for f in frames}) > 1  # distinct decoded pictures
 
 
 def test_iter_is_lazy() -> None:

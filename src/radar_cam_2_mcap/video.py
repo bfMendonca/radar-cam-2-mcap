@@ -84,13 +84,13 @@ def read_frame_meta(meta: Path) -> list[FrameMeta]:
     return frames
 
 
-def count_h264_frames(path: Path) -> int:
+def count_h264_frames(path: Path, *, chunk_size: int = _CHUNK) -> int:
     """Count slice NAL units (types 1 and 5) in an Annex B stream without decoding."""
     count = 0
     carry = b""
     with path.open("rb") as fh:
         while True:
-            chunk = fh.read(_CHUNK)
+            chunk = fh.read(chunk_size)
             if not chunk:
                 break
             buf = carry + chunk
