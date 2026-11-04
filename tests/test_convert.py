@@ -95,7 +95,9 @@ def test_convert_counts_and_order(name: str, tmp_path: Path) -> None:
 
 def test_convert_complete_fixture(tmp_path: Path) -> None:
     out, res = _convert("complete_2seg", tmp_path)
-    assert res.warnings == []
+    # no session-level problems; only converter findings about the data (gaps, radar bytes)
+    assert not any("session" in w or "unsynced" in w or "anchor" in w for w in res.warnings)
+    assert not any("wall-clock samples differ" in w for w in res.warnings)
     meta = _metadata(out)
     assert meta["radar_cam_2_mcap"]["contract_version"] == "0.1"
     assert radar_cam_2_mcap.CONTRACT_VERSION == "0.1"
@@ -103,7 +105,7 @@ def test_convert_complete_fixture(tmp_path: Path) -> None:
     assert meta["radar_cam_2_mcap"]["time_quality"] == "ntp"
     assert meta["radar_cam_2_mcap"]["time_base"] == "wall"
     assert meta["radar_cam_2_mcap"]["image_format"] == "jpeg"
-    assert json.loads(meta["radar_cam_2_mcap"]["warnings"]) == []
+    assert json.loads(meta["radar_cam_2_mcap"]["warnings"]) == res.warnings
     src = meta["source_session"]
     assert src["session_id"] == "s000066"
     assert src["state"] == "complete"
@@ -314,3 +316,182 @@ def test_out_of_order_stream_is_counted_not_altered(tmp_path: Path) -> None:
     sj.write_text(json.dumps(data))
     res = convert_session(src, tmp_path / "o", CFG, ConvertOptions())
     assert any("out of order within stream" in w for w in res.warnings)
+
+
+# ---- Task 8: /events, findings and cross-check ------------------------------------------
+
+
+def _events(path: Path) -> list[Any]:
+    return list(read_ros2_messages(path, topics=["/events"]))
+
+
+def _copy(name: str, tmp_path: Path) -> Path:
+    dst = tmp_path / "src"
+    shutil.copytree(FIXTURES / name, dst)
+    return dst
+
+
+def _boot_events(name: str) -> list[dict[str, Any]]:
+    lines = (FIXTURES / name / "events.jsonl").read_text().splitlines()
+    return [json.loads(x) for x in lines]
+
+
+def test_events_topic_has_recorder_events_and_converter_findings(tmp_path: Path) -> None:
+    out, _ = _convert("in_progress_unlisted", tmp_path)
+    msgs = _events(out)
+    times = _log_times(out)
+    rec = [m for m in msgs if m.ros_msg.name == "radar_cam_recorder"]
+    src = _boot_events("in_progress_unlisted")
+    assert len(rec) == len(src)
+    session = load_session(FIXTURES / "in_progress_unlisted")
+    from radar_cam_2_mcap.timebase import Timeline
+
+    tl = Timeline(session.anchors, "wall")
+    for m, ev in zip(rec, src, strict=True):
+        assert m.log_time_ns == tl.to_log_ns(ev["boottime_ns"])
+        assert m.ros_msg.level == (30 if ev["kind"] == "incident" else 20)
+    assert any(m.ros_msg.msg.startswith("camera exited") for m in rec)
+    assert any(m.ros_msg.msg.startswith("segment gap") for m in rec)
+    conv = [m for m in msgs if m.ros_msg.name == "radar_cam_2_mcap"]
+    unlisted = [m for m in conv if "not listed" in m.ros_msg.msg]
+    assert unlisted and unlisted[0].log_time_ns == min(times)
+    assert all(m.ros_msg.level in (20, 30) for m in conv)
+
+
+def _shift_wall_clock(src: Path, delta_us: int) -> None:
+    for meta in (src / "video").glob("*.meta.json"):
+        data = json.loads(meta.read_text())
+        for fr in data:
+            if "FrameWallClock" in fr:
+                fr["FrameWallClock"] += delta_us
+        meta.write_text(json.dumps(data))
+
+
+def test_crosscheck_warning_reaches_events_and_metadata(tmp_path: Path) -> None:
+    src = _copy("complete_2seg", tmp_path)
+    _shift_wall_clock(src, 80_000)
+    res = convert_session(src, tmp_path / "o", CFG, ConvertOptions())
+    out = res.outputs[0]
+    assert any("wall-clock samples differ" in w for w in res.warnings)
+    md = _metadata(out)["radar_cam_2_mcap"]
+    assert any("wall-clock samples differ" in w for w in json.loads(md["warnings"]))
+    assert float(md["crosscheck_max_diff_ms"]) > 50
+    assert int(md["crosscheck_samples"]) > 0
+    last = max(_log_times(out))
+    hits = [m for m in _events(out) if "wall-clock samples differ" in m.ros_msg.msg]
+    assert len(hits) == 1 and hits[0].log_time_ns == last and hits[0].ros_msg.level == 30
+
+
+@pytest.mark.parametrize("name", ["complete_2seg", "in_progress_unlisted", "interrupted"])
+def test_unshifted_fixtures_have_no_crosscheck_warning(name: str, tmp_path: Path) -> None:
+    out, res = _convert(name, tmp_path)
+    assert not any("wall-clock samples differ" in w for w in res.warnings)
+    md = _metadata(out)["radar_cam_2_mcap"]
+    assert float(md["crosscheck_max_diff_ms"]) <= 50
+    assert int(md["crosscheck_samples"]) > 0
+
+
+def test_segment_gap_event_carries_gap_ns(tmp_path: Path) -> None:
+    out, _ = _convert("complete_2seg", tmp_path)
+    last0 = read_frame_meta(FIXTURES / "complete_2seg/video/0000.meta.json")[-1].sensor_ts_ns
+    first1 = read_frame_meta(FIXTURES / "complete_2seg/video/0001.meta.json")[0].sensor_ts_ns
+    gap = first1 - last0
+    hits = [m for m in _events(out) if m.ros_msg.msg.startswith("segment gap 0->1")]
+    assert len(hits) == 1
+    assert hits[0].ros_msg.msg == f"segment gap 0->1: {gap} ns"
+    assert hits[0].ros_msg.level == (20 if gap < 10_000_000_000 else 30)
+    assert hits[0].log_time_ns == max(_log_times(out))
+
+
+@pytest.mark.parametrize("name", ["complete_2seg", "in_progress_unlisted", "interrupted"])
+def test_log_time_non_decreasing_with_events(name: str, tmp_path: Path) -> None:
+    out, _ = _convert(name, tmp_path)
+    times = _log_times(out)
+    assert times == sorted(times)
+    assert _topic_counts(out)["/events"] > 0
+
+
+def _append_radar(src: Path, text: str) -> None:
+    csv = sorted((src / "radar").glob("*.csv"))[-1]
+    csv.write_text(csv.read_text() + text)
+
+
+def test_radar_summary_event_lists_nonzero_counters(tmp_path: Path) -> None:
+    src = _copy("complete_2seg", tmp_path)
+    _append_radar(src, "999999999999999,zz\n")  # garbled hex line
+    out, res = _convert_path(src, tmp_path)
+    hits = [m for m in _events(out) if m.ros_msg.msg.startswith("radar decoding problems")]
+    assert len(hits) == 1
+    assert "garbled_lines=1" in hits[0].ros_msg.msg
+    assert "framing_errors" not in hits[0].ros_msg.msg
+    assert hits[0].ros_msg.level == 30
+    assert any("garbled_lines=1" in w for w in res.warnings)
+
+
+def _convert_path(src: Path, tmp_path: Path, **kw: Any) -> tuple[Path, Any]:
+    res = convert_session(src, tmp_path / "o", CFG, ConvertOptions(**kw))
+    return res.outputs[0], res
+
+
+def test_recovered_frames_info_event(tmp_path: Path) -> None:
+    import ld2451
+    from ld2451.protocol import encode_report
+
+    def tgt(a: int) -> ld2451.Target:
+        return ld2451.Target(angle_deg=a, distance_m=20, approaching=True, speed_kmh=30, snr=100)
+
+    full = encode_report([tgt(1), tgt(2)])
+    short = full[:-9] + full[-4:]
+    base = RadarStats()
+    dec = RecoveringFrameDecoder(recover=True)
+    for seg in load_session(FIXTURES / "complete_2seg").segments:
+        if seg.radar:
+            for _ in iter_radar_reports(seg.radar, base, decoder=dec):
+                pass
+    flush_trailing(dec, base)
+    n = base.recovered_frames + 1
+    src = _copy("complete_2seg", tmp_path)
+    _append_radar(src, f"999999999999999,{short.hex()}\n")
+    out, _ = _convert_path(src, tmp_path)
+    hits = [m for m in _events(out) if m.ros_msg.msg.startswith("recovered")]
+    assert len(hits) == 1
+    assert hits[0].ros_msg.msg == (
+        f"recovered {n} short radar data frames: reported count exceeds targets present"
+    )
+    assert hits[0].ros_msg.level == 20
+
+
+def test_per_segment_events_follow_segment_spans(tmp_path: Path) -> None:
+    res = convert_session(
+        FIXTURES / "complete_2seg", tmp_path / "o", CFG, ConvertOptions(per_segment=True)
+    )
+    src = _boot_events("complete_2seg")
+    session = load_session(FIXTURES / "complete_2seg")
+    from radar_cam_2_mcap.timebase import Timeline
+
+    tl = Timeline(session.anchors, "wall")
+    start1 = read_frame_meta(FIXTURES / "complete_2seg/video/0001.meta.json")[0].sensor_ts_ns
+    expect0 = [e for e in src if e["boottime_ns"] < start1]
+    expect1 = [e for e in src if e["boottime_ns"] >= start1]
+    assert expect0 and expect1
+    for path, expect in zip(res.outputs, (expect0, expect1), strict=True):
+        got = [m for m in _events(path) if m.ros_msg.name == "radar_cam_recorder"]
+        assert [m.log_time_ns for m in got] == [tl.to_log_ns(e["boottime_ns"]) for e in expect]
+        times = _log_times(path)
+        assert times == sorted(times)
+    gap = [m for m in _events(res.outputs[1]) if m.ros_msg.msg.startswith("segment gap 0->1")]
+    assert len(gap) == 1
+    assert not [m for m in _events(res.outputs[0]) if m.ros_msg.msg.startswith("segment gap")]
+
+
+def test_event_without_boottime_skipped_with_warning(tmp_path: Path) -> None:
+    src = _copy("complete_2seg", tmp_path)
+    ev = src / "events.jsonl"
+    ev.write_text(ev.read_text() + json.dumps({"kind": "incident", "reason": "no clock"}) + "\n")
+    out, res = _convert_path(src, tmp_path)
+    assert any("without boottime_ns" in w for w in res.warnings)
+    msgs = _events(out)
+    assert not [m for m in msgs if m.ros_msg.msg.startswith("no clock")]
+    rec = [m for m in msgs if m.ros_msg.name == "radar_cam_recorder"]
+    assert len(rec) == len(_boot_events("complete_2seg"))
+    assert [m for m in msgs if "without boottime_ns" in m.ros_msg.msg]

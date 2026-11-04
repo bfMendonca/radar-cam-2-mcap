@@ -6,6 +6,15 @@ sorted; each stream is sorted as long as the timeline is monotonic. If anchors m
 log time go backwards the messages are NOT reordered or altered: the inversions are counted per
 topic and reported as a warning, and the file is then not strictly time-ordered.
 
+``/events`` carries every ``events.jsonl`` entry (merged by its mapped boot time) plus converter
+findings. Findings known before streaming (session warnings) are stamped at the file's first
+message time, right after the static messages; findings known only after streaming (video,
+radar and cross-check results, segment gaps, out-of-order counts) are stamped at the file's last
+message time and written last, so ``log_time`` stays non-decreasing. Every finding is also in
+the ``warnings`` metadata. With ``per_segment`` each recorder event goes to the file whose
+segment span contains it (before the first span: first file; after: last file), segment-level
+findings to the file they concern and session-level ones to the first file.
+
 ``/camera/camera_info`` is written once per file (at the time of the file's first message),
 not repeated with every frame. Same for ``/tf_static``.
 """
@@ -31,18 +40,31 @@ from radar_cam_2_mcap.radar import (
     flush_trailing,
     iter_radar_reports,
 )
-from radar_cam_2_mcap.session import SegmentFiles, SessionInfo, load_session
+from radar_cam_2_mcap.session import SegmentFiles, SessionInfo, load_events, load_session
 from radar_cam_2_mcap.sink import McapSink
-from radar_cam_2_mcap.timebase import Timeline, time_quality
-from radar_cam_2_mcap.video import iter_video_frames
+from radar_cam_2_mcap.timebase import Timeline, crosscheck, time_quality
+from radar_cam_2_mcap.video import iter_video_frames, read_frame_meta
 
 __all__ = ["ConvertOptions", "ConvertResult", "OutputExistsError", "convert_session"]
 
 # Merge item: (log_ns, (rank, seq), topic, datatype, message). rank orders equal timestamps:
-# static 0, then video 1, then radar 2 (then events, Task 8); seq is per stream.
+# static 0 (pre-stream findings follow its two messages), video 1, radar 2, events 3.
 _Item = tuple[int, tuple[int, int], str, str, dict[str, Any]]
 
-_RANK_STATIC, _RANK_VIDEO, _RANK_RADAR = 0, 1, 2
+_RANK_STATIC, _RANK_VIDEO, _RANK_RADAR, _RANK_EVENT = 0, 1, 2, 3
+_INFO, _WARN = 20, 30
+_GAP_WARN_NS = 10_000_000_000
+# Cross-check sampling: every 25th frame plus the first and last of each segment.
+_SAMPLE_STRIDE = 25
+_RADAR_PROBLEMS = (
+    "framing_errors",
+    "bad_payloads",
+    "partial_lines",
+    "garbled_lines",
+    "trailing_bytes",
+    "bytes_discarded",
+)
+_Finding = tuple[int, str]  # (level, text)
 
 _UNSYNCED = (
     "session time is unsynced: wall-clock timestamps are only as good as the Pi's clock "
@@ -116,15 +138,74 @@ class _Run:
         self.video_warnings: list[str] = []
         self.out_of_order: dict[str, int] = {}
         self.quality = time_quality(session)
+        self.findings: list[str] = []  # converter findings beyond the run-level warning lists
+        self.events: list[dict[str, Any]] = []
+        self.event_warnings: list[str] = []
+        for ev in load_events(session.path / "events.jsonl"):
+            if isinstance(ev.get("boottime_ns"), int) and not isinstance(ev["boottime_ns"], bool):
+                self.events.append(ev)
+            else:
+                self.event_warnings.append(
+                    f"skipped events.jsonl entry without boottime_ns: {ev.get('reason', ev)!r}"
+                )
+        self.events.sort(key=lambda e: e["boottime_ns"])  # stable; normally already ordered
+        self.prev_seg_last: tuple[int, int] | None = None  # (index, last sensor ts)
+        self.file_findings: list[_Finding] = []
+        self.samples: list[tuple[int, int]] = []
+        self._seen = {"video": 0, "timeline": 0}
+        self._seen_ooo: dict[str, int] = {}
 
     def warnings(self) -> list[str]:
-        out = [*self.session.warnings, *self.timeline.warnings, *self.video_warnings]
+        out = [
+            *self.session.warnings,
+            *self.event_warnings,
+            *self.timeline.warnings,
+            *self.video_warnings,
+        ]
         out += [
             f"{topic}: {n} messages out of order within stream"
             for topic, n in self.out_of_order.items()
         ]
         if self.quality == "unsynced":
             out.append(_UNSYNCED)
+        return [*out, *self.findings]
+
+    def segment_span(self, seg: SegmentFiles) -> tuple[int, int] | None:
+        """Boot-time span of a segment: first/last frame stamps, else first/last radar line."""
+        try:
+            if seg.h264 is not None and seg.meta is not None:
+                frames = read_frame_meta(seg.meta)
+                if frames:
+                    return frames[0].sensor_ts_ns, frames[-1].sensor_ts_ns
+            if seg.radar is not None:
+                stamps = []
+                for line in seg.radar.read_text(encoding="utf-8", errors="replace").splitlines():
+                    head = line.split(",", 1)[0]
+                    if head.isdigit():
+                        stamps.append(int(head))
+                if stamps:
+                    return stamps[0], stamps[-1]
+        except (OSError, ValueError):
+            pass
+        return None
+
+    def assign_events(self, groups: list[list[SegmentFiles]]) -> list[list[dict[str, Any]]]:
+        """Split recorder events over files by segment span (one group: all of them)."""
+        out: list[list[dict[str, Any]]] = [[] for _ in groups]
+        if len(groups) == 1:
+            out[0] = list(self.events)
+            return out
+        starts: list[tuple[int, int]] = []  # (span start, file number)
+        for i, group in enumerate(groups):
+            spans = [sp for sp in (self.segment_span(g) for g in group) if sp is not None]
+            if spans:
+                starts.append((min(a for a, _ in spans), i))
+        for ev in self.events:
+            target = 0
+            for start, i in starts:
+                if start <= ev["boottime_ns"]:
+                    target = i
+            out[target].append(ev)
         return out
 
     def _track(self, last: dict[str, int], topic: str, log_ns: int) -> None:
@@ -138,7 +219,11 @@ class _Run:
         cfg, tl = self.cfg, self.timeline
         last: dict[str, int] = {}
         seq = 0
+        n = 0
         for seg in segs:
+            first_ts: int | None = None
+            last_sample: tuple[int, int] | None = None
+            sampled = False
             for frame in iter_video_frames(
                 seg,
                 cfg.image,
@@ -150,6 +235,25 @@ class _Run:
                 self._track(last, cfg.topics.image, log)
                 stats[seg.index].frames += 1
                 stats[seg.index].touch(boot)
+                if first_ts is None:
+                    first_ts = boot
+                    prev = self.prev_seg_last
+                    if prev is not None:
+                        gap = boot - prev[1]
+                        self.file_findings.append(
+                            (
+                                _INFO if gap < _GAP_WARN_NS else _WARN,
+                                f"segment gap {prev[0]}->{seg.index}: {gap} ns",
+                            )
+                        )
+                wall_us = frame.meta.frame_wall_clock_us
+                if wall_us is not None:
+                    last_sample = (boot, wall_us)
+                    sampled = n % _SAMPLE_STRIDE == 0 or first_ts == boot
+                    if sampled:
+                        self.samples.append(last_sample)
+                n += 1
+                self.prev_seg_last = (seg.index, boot)
                 img = mapping.compressed_image(frame, log, cfg.topics.frame_camera)
                 yield (
                     log,
@@ -168,6 +272,8 @@ class _Run:
                     meta,
                 )
                 seq += 2
+            if last_sample is not None and not sampled:
+                self.samples.append(last_sample)
 
     def radar_stream(
         self, segs: Iterable[SegmentFiles], rstats: RadarStats, stats: dict[int, _SegStats]
@@ -216,8 +322,80 @@ class _Run:
         tf = mapping.tf_static(cfg.transforms, log_ns)
         yield (log_ns, (_RANK_STATIC, 1), cfg.topics.tf_static, "tf2_msgs/TFMessage", tf)
 
-    def write_file(self, path: Path, segs: list[SegmentFiles], *, last_file: bool) -> RadarStats:
+    def event_stream(
+        self, events: list[dict[str, Any]], pre: list[_Finding], log_ns: int
+    ) -> Iterator[_Item]:
+        topic = self.cfg.topics.events
+        last: dict[str, int] = {}
+        for i, (level, text) in enumerate(pre):
+            yield (
+                log_ns,
+                (_RANK_STATIC, 2 + i),
+                topic,
+                "rcl_interfaces/Log",
+                _finding(text, level, log_ns),
+            )
+        for seq, ev in enumerate(events):
+            log = self.timeline.to_log_ns(ev["boottime_ns"])
+            self._track(last, topic, log)
+            yield (
+                log,
+                (_RANK_EVENT, seq),
+                topic,
+                "rcl_interfaces/Log",
+                mapping.event_message(ev, log),
+            )
+
+    def _post_findings(self, rstats: RadarStats, extra: dict[str, str]) -> list[_Finding]:
+        """Findings only known after streaming, for the file just written."""
+        out: list[_Finding] = list(self.file_findings)
+        new = self.timeline.warnings[self._seen["timeline"] :]
+        new += self.video_warnings[self._seen["video"] :]
+        self._seen = {"video": len(self.video_warnings), "timeline": len(self.timeline.warnings)}
+        out += [(_WARN, w) for w in new]
+        for topic, n in self.out_of_order.items():
+            delta = n - self._seen_ooo.get(topic, 0)
+            if delta:
+                out.append((_WARN, f"{topic}: {delta} messages out of order within stream"))
+        self._seen_ooo = dict(self.out_of_order)
+        bad = {k: getattr(rstats, k) for k in _RADAR_PROBLEMS if getattr(rstats, k)}
+        if bad:
+            listing = ", ".join(f"{k}={v}" for k, v in bad.items())
+            msg = f"radar decoding problems: {listing}"
+            out.append((_WARN, msg))
+            self.findings.append(msg)
+        if rstats.recovered_frames > 0:
+            msg = (
+                f"recovered {rstats.recovered_frames} short radar data frames: "
+                "reported count exceeds targets present"
+            )
+            out.append((_INFO, msg))
+            self.findings.append(msg)
+        self.findings += [text for _, text in self.file_findings]
+        if self.samples:
+            worst = max(abs(self.timeline.to_wall_ns(b) - w * 1000) / 1e6 for b, w in self.samples)
+            extra["crosscheck_max_diff_ms"] = f"{worst:.3f}"
+        else:
+            extra["crosscheck_max_diff_ms"] = "n/a"
+        extra["crosscheck_samples"] = str(len(self.samples))
+        for w in crosscheck(self.timeline, self.samples, self.cfg.time.crosscheck_tolerance_ms):
+            out.append((_WARN, w))
+            self.findings.append(w)
+        return out
+
+    def write_file(
+        self,
+        path: Path,
+        segs: list[SegmentFiles],
+        *,
+        last_file: bool,
+        first_file: bool = True,
+        events: list[dict[str, Any]] | None = None,
+    ) -> RadarStats:
         cfg = self.cfg
+        events = events or []
+        self.file_findings = []
+        self.samples = []
         stats = {
             s.index: _SegStats(
                 index=s.index,
@@ -236,6 +414,7 @@ class _Run:
                 (topics.radar_scan, "radar_msgs/RadarScan"),
                 (topics.radar_status, "radar_cam_msgs/RadarStatus"),
                 (topics.tf_static, "tf2_msgs/TFMessage"),
+                (topics.events, "rcl_interfaces/Log"),
             ):
                 sink.register(topic, datatype)
 
@@ -244,9 +423,10 @@ class _Run:
             # Peek each stream's first message: the static messages go at the earliest one.
             head_v = next(video, None)
             head_r = next(radar, None)
-            firsts = [h for h in (head_v, head_r) if h is not None]
+            firsts = [h[0] for h in (head_v, head_r) if h is not None]
+            firsts += [self.timeline.to_log_ns(ev["boottime_ns"]) for ev in events]
             if firsts:
-                t0 = min(h[0] for h in firsts)
+                t0 = min(firsts)
             else:
                 t0 = self.timeline.to_log_ns(min(a.boottime_ns for a in self.session.anchors))
             streams: list[Iterable[_Item]] = [
@@ -254,15 +434,26 @@ class _Run:
                 _chain(head_v, video),
                 _chain(head_r, radar),
             ]
-            # EXTENSION POINT (Task 8): add the /events stream to ``streams`` here.
+            pre: list[_Finding] = []
+            if first_file:
+                pre = [(_WARN, w) for w in self.session.warnings]
+                pre += [(_WARN, w) for w in self.event_warnings]
+                if self.quality == "unsynced":
+                    pre.append((_WARN, _UNSYNCED))
+            streams.append(self.event_stream(events, pre, t0))
 
             merged = heapq.merge(*streams, key=lambda m: (m[0], m[1]))
+            end_ns = t0
             for log_ns, _order, topic, _datatype, message in merged:
                 sink.write(topic, message, log_ns)
+                end_ns = max(end_ns, log_ns)
 
             if last_file:
                 flush_trailing(self.decoder, rstats)
-            self._write_metadata(sink, segs, stats, rstats)
+            extra: dict[str, str] = {}
+            for level, text in self._post_findings(rstats, extra):
+                sink.write(topics.events, _finding(text, level, end_ns), end_ns)
+            self._write_metadata(sink, segs, stats, rstats, extra)
         return rstats
 
     def _write_metadata(
@@ -271,6 +462,7 @@ class _Run:
         segs: list[SegmentFiles],
         stats: dict[int, _SegStats],
         rstats: RadarStats,
+        extra: dict[str, str],
     ) -> None:
         cfg, s = self.cfg, self.session
         warnings = self.warnings()
@@ -287,6 +479,7 @@ class _Run:
                 "image_subsampling": str(cfg.image.subsampling),
                 "mcap_compression": cfg.mcap.compression,
                 "mcap_chunk_size": str(cfg.mcap.chunk_size),
+                **extra,
             },
         )
         sink.add_metadata(
@@ -326,6 +519,10 @@ class _Run:
         sink.add_metadata("radar_stats", {k: str(v) for k, v in asdict(rstats).items()})
 
 
+def _finding(text: str, level: int, log_ns: int) -> dict[str, Any]:
+    return mapping.event_message({"kind": "converter", "level": level, "reason": text}, log_ns)
+
+
 def _chain(head: _Item | None, rest: Iterator[_Item]) -> Iterator[_Item]:
     if head is not None:
         yield head
@@ -354,12 +551,19 @@ def convert_session(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     run = _Run(session, cfg, opts, timeline)
+    event_groups = run.assign_events([segs for _, segs in groups])
     pairs: list[tuple[Path, Path]] = []
     try:
         for i, (final, segs) in enumerate(groups):
             tmp = final.with_name(final.name + ".tmp")
             pairs.append((tmp, final))
-            run.write_file(tmp, segs, last_file=i == len(groups) - 1)
+            run.write_file(
+                tmp,
+                segs,
+                last_file=i == len(groups) - 1,
+                first_file=i == 0,
+                events=event_groups[i],
+            )
         for tmp, final in pairs:
             os.replace(tmp, final)
     except BaseException:
