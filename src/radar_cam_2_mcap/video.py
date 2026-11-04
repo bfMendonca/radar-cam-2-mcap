@@ -136,6 +136,11 @@ def check_frame_counts(segments: Iterable[SegmentFiles]) -> None:
             raise FrameCountMismatch(_mismatch(seg, n_stream, n_meta))
 
 
+def _decode(stream: Any, packet: Any) -> list[Any]:
+    """Frames the decoder returns for one packet (``None`` flushes); a seam for tests."""
+    return list(stream.decode(packet))
+
+
 def _encode(rgb: Any, image: ImageConfig) -> tuple[bytes, Literal["jpeg", "png"]]:
     img = Image.fromarray(rgb, "RGB")
     out = io.BytesIO()
@@ -185,7 +190,7 @@ def iter_video_frames(
 
         def decoded(packet: Any) -> list[Any]:
             try:
-                return list(stream.decode(packet))
+                return _decode(stream, packet)
             except av.error.FFmpegError:
                 return []  # undecodable packet: its frame is reported missing below
 

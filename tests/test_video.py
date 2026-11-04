@@ -5,6 +5,7 @@ import itertools
 import re
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 from PIL import Image, JpegImagePlugin
@@ -243,15 +244,14 @@ def test_undecodable_frame_skips_its_meta_entry(tmp_path: Path) -> None:
 
 def test_lost_tail_frames_reported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Frames that never come out of the decoder at the end are reported, not hidden."""
-    import av.video.stream
+    from radar_cam_2_mcap import video
 
-    real = av.video.stream.VideoStream.decode
+    real = video._decode
 
-    def decode(self, packet=None):  # type: ignore[no-untyped-def]
-        frames = real(self, packet)
-        return [f for f in frames if f.pts is None or f.pts < 37]
+    def decode(stream: Any, packet: Any) -> list[Any]:
+        return [f for f in real(stream, packet) if f.pts is None or f.pts < 37]
 
-    monkeypatch.setattr(av.video.stream.VideoStream, "decode", decode)
+    monkeypatch.setattr(video, "_decode", decode)
     warnings: list[str] = []
     frames = list(
         iter_video_frames(_fixture_seg(), ImageConfig(), allow_prefix=False, warnings=warnings)
@@ -261,18 +261,17 @@ def test_lost_tail_frames_reported(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
 
 def test_frame_without_packet_index_is_a_pairing_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    import av.video.stream
-
+    from radar_cam_2_mcap import video
     from radar_cam_2_mcap.video import FramePairingError
 
-    real = av.video.stream.VideoStream.decode
+    real = video._decode
 
-    def decode(self, packet=None):  # type: ignore[no-untyped-def]
-        frames = real(self, packet)
+    def decode(stream: Any, packet: Any) -> list[Any]:
+        frames = real(stream, packet)
         for f in frames:
             f.pts = None
         return frames
 
-    monkeypatch.setattr(av.video.stream.VideoStream, "decode", decode)
+    monkeypatch.setattr(video, "_decode", decode)
     with pytest.raises(FramePairingError):
         list(iter_video_frames(_fixture_seg(), ImageConfig(), allow_prefix=False, warnings=[]))
