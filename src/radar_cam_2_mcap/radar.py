@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import ld2451
-from ld2451.protocol import decode_report
+from ld2451.framing import FrameKind, RawFrame
+from ld2451.protocol import DATA_FOOTER, MAX_DATA_PAYLOAD, TARGET_SIZE, decode_report
 from ld2451.recorder import parse_line
 
-__all__ = ["RadarStats", "iter_radar_reports"]
+__all__ = ["RadarStats", "RecoveringFrameDecoder", "iter_radar_reports"]
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +24,9 @@ class RadarStats:
     ``framing_errors`` is the decoder's bad footers plus bad lengths: resync events, not
     distinct frames. ``bad_payloads`` counts frames whose payload ``decode_report`` rejected.
     ``partial_lines`` counts a last line without a newline, ``garbled_lines`` lines whose hex
-    did not parse; both are skipped.
+    did not parse; both are skipped. ``recovered_frames`` counts short data frames recovered
+    by ``RecoveringFrameDecoder``; they are also in ``data_frames`` and never in
+    ``framing_errors``.
     """
 
     reads: int = 0
@@ -34,6 +37,81 @@ class RadarStats:
     bad_payloads: int = 0
     partial_lines: int = 0
     garbled_lines: int = 0
+    recovered_frames: int = 0
+
+
+_PREFIX = 6  # header + length field
+_FOOTER = len(DATA_FOOTER)
+
+
+def _short_frame_end(buf: bytes | bytearray, length: int) -> int | None:
+    """Total size of a short data frame that starts at ``buf[0]``, or None.
+
+    A survey of 21 real sessions found about 13% of data frames malformed in 8 sessions, and
+    in 93% of those the count byte and length field declare N targets while N-1 are present:
+    the footer sits exactly 5 bytes before the declared end. Looks for the footer at
+    ``declared_end - 5k`` for k = 1 up to the declared target count and accepts the smallest k
+    whose payload (count byte, alarm byte, targets) is whole 5-byte targets. The caller has
+    already established that the footer is not at the declared end.
+    """
+    declared_end = _PREFIX + length + _FOOTER
+    for k in range(1, max(0, (length - 2) // TARGET_SIZE) + 1):
+        start = declared_end - _FOOTER - TARGET_SIZE * k
+        if (start - _PREFIX - 2) % TARGET_SIZE == 0 and buf[start : start + _FOOTER] == DATA_FOOTER:
+            return start + _FOOTER
+    return None
+
+
+class RecoveringFrameDecoder(ld2451.FrameDecoder):
+    """``FrameDecoder`` that also yields short data frames (see ``_short_frame_end``).
+
+    Before the base class would count a bad footer and resync, a data frame whose declared
+    length has fully arrived but whose footer is missing there is checked for an early footer.
+    If one is found the frame is yielded (payload = the bytes actually present, so the
+    radar's original count byte stays in it) and consumed without counting a framing error;
+    the following frame is untouched and keeps the time of its own read. ``recovered_frames``
+    counts these. Relies on the base class's private buffer helpers (driver pinned in
+    pyproject); with ``recover = False`` it behaves exactly like ``FrameDecoder``.
+    """
+
+    def __init__(
+        self, max_buffer: int = ld2451.framing.DEFAULT_MAX_BUFFER, *, recover: bool = True
+    ) -> None:
+        super().__init__(max_buffer)
+        self.recover = recover
+        self.recovered_frames = 0
+
+    def _next_frame(self) -> RawFrame | None:
+        frame = self._try_recover() if self.recover else None
+        return frame if frame is not None else super()._next_frame()
+
+    def _try_recover(self) -> RawFrame | None:
+        idx, kind = self._find_header()
+        if kind is not FrameKind.DATA or len(self._buf) < idx + _PREFIX:
+            return None
+        length = int.from_bytes(self._buf[idx + 4 : idx + 6], "little")
+        total = _PREFIX + length + _FOOTER
+        if length > MAX_DATA_PAYLOAD or len(self._buf) < idx + total:
+            return None
+        if self._buf[idx + total - _FOOTER : idx + total] == DATA_FOOTER:
+            return None
+        end = _short_frame_end(self._buf[idx:], length)
+        if end is None:
+            return None
+        self._discard(idx)  # garbage before the header, counted as usual
+        raw = bytes(self._buf[:end])
+        frame = RawFrame(
+            kind=FrameKind.DATA,
+            payload=raw[_PREFIX : end - _FOOTER],
+            raw=raw,
+            t_rx_ns=self._time_at_base(),
+        )
+        del self._buf[:end]  # consumed, not discarded
+        self._base += end
+        if not self._buf:
+            self._marks.clear()
+        self.recovered_frames += 1
+        return frame
 
 
 def iter_radar_reports(
@@ -41,6 +119,7 @@ def iter_radar_reports(
     stats: RadarStats,
     *,
     decoder: ld2451.FrameDecoder | None = None,
+    recover_short_frames: bool = True,
 ) -> Iterator[ld2451.RadarReport]:
     """Yield a ``RadarReport`` for each data frame in one radar CSV segment.
 
@@ -51,6 +130,12 @@ def iter_radar_reports(
     Pass one shared ``decoder`` for consecutive segment files: the recorder rotates files
     mid-stream and a frame can straddle two of them. Without it a fresh decoder is used.
 
+    With ``recover_short_frames`` (default) frames whose count and length overstate the
+    targets present by whole targets, footer early, are yielded with the targets actually
+    there; ``reported_count`` keeps the radar's count. This needs a ``RecoveringFrameDecoder``
+    (created here when ``decoder`` is None); a plain ``FrameDecoder`` with recovery on raises
+    ``ValueError``. The flag is applied to the decoder for this call.
+
     ``stats`` accumulates: this call adds its own deltas (decoder counters are cumulative
     when the decoder is shared), so reusing one ``RadarStats`` across files gives totals.
     The header, blank and comment lines are skipped silently. A garbled line (unparsable
@@ -59,7 +144,16 @@ def iter_radar_reports(
     ``partial_lines``. Closing the generator early is treated as an abort: the deltas
     gathered so far are still added, but the file is not fully accounted for.
     """
-    dec = decoder if decoder is not None else ld2451.FrameDecoder()
+    dec: ld2451.FrameDecoder
+    if decoder is None:
+        dec = RecoveringFrameDecoder(recover=recover_short_frames)
+    else:
+        dec = decoder
+        if isinstance(dec, RecoveringFrameDecoder):
+            dec.recover = recover_short_frames
+        elif recover_short_frames:
+            raise ValueError("short-frame recovery needs a RecoveringFrameDecoder")
+    recovered_start = dec.recovered_frames if isinstance(dec, RecoveringFrameDecoder) else 0
     start = (dec.bytes_discarded, dec.bad_footers, dec.bad_lengths, dec.command_frames)
     try:
         with open(path, encoding="ascii", errors="replace", newline="") as fh:
@@ -92,3 +186,5 @@ def iter_radar_reports(
         stats.bytes_discarded += dec.bytes_discarded - start[0]
         stats.framing_errors += (dec.bad_footers - start[1]) + (dec.bad_lengths - start[2])
         stats.ack_frames += dec.command_frames - start[3]
+        if isinstance(dec, RecoveringFrameDecoder):
+            stats.recovered_frames += dec.recovered_frames - recovered_start

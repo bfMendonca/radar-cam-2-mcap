@@ -84,6 +84,8 @@ class TopicsConfig:
 class RadarConfig:
     # Which direction a positive LD2451 angle means is UNVERIFIED (spec section 6).
     angle_sign: int = 1
+    # Recover data frames whose count/length overstate the targets present (footer early).
+    recover_short_frames: bool = True
 
 
 @dataclass(frozen=True)

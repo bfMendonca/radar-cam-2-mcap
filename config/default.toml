@@ -34,6 +34,7 @@ frame_radar = "radar_link"
 
 [radar]
 angle_sign = 1       # UNVERIFIED: which direction a positive LD2451 angle means
+recover_short_frames = true  # keep data frames whose count/length overstate the targets present
 
 [time]
 crosscheck_tolerance_ms = 50.0

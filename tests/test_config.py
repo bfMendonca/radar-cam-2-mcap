@@ -49,3 +49,12 @@ def test_unknown_key_rejected(tmp_path: Path) -> None:
 def test_default_toml_equals_builtin_defaults() -> None:
     path = Path(__file__).parent.parent / "config" / "default.toml"
     assert load_config(path) == load_config(None)
+
+
+def test_recover_short_frames_default_and_override(tmp_path: Path) -> None:
+    assert load_config(None).radar.recover_short_frames is True
+    path = tmp_path / "c.toml"
+    path.write_text("[radar]\nrecover_short_frames = false\n")
+    cfg = load_config(path)
+    assert cfg.radar.recover_short_frames is False
+    assert cfg.radar.angle_sign == 1
