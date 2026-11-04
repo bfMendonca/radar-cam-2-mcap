@@ -33,6 +33,7 @@ def test_unlisted_segment_is_found_with_warning() -> None:
     assert info.listed_segment_indexes == [0, 1, 2]
     assert [s.index for s in info.segments] == [0, 1, 2, 3]
     assert any("3" in w and "session.json" in w for w in info.warnings)
+    assert "session is still in progress (recorder did not close it)" in info.warnings
 
 
 def test_interrupted_session_loads() -> None:
@@ -40,6 +41,67 @@ def test_interrupted_session_loads() -> None:
     assert info.state == "interrupted"
     assert info.stop_reason == "interrupted (found at next start)"
     assert [s.index for s in info.segments] == [0, 1]
+    assert "session was interrupted; the last segment may be truncated" in info.warnings
+
+
+def _write_session(path: Path, **extra: object) -> None:
+    data = {"format_version": 1, "session_id": "s000001", "state": "complete", **extra}
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "session.json").write_text(json.dumps(data))
+
+
+def test_segment_with_meta_only_is_dropped(tmp_path: Path) -> None:
+    _write_session(tmp_path, segments=[{"index": 0}])
+    (tmp_path / "video").mkdir()
+    (tmp_path / "video" / "0000.meta.json").write_text("[]")
+    info = load_session(tmp_path)
+    assert info.segments == []
+    assert "segment 0 dropped: needs meta.json plus h264 or radar csv" in info.warnings
+
+
+def test_segment_without_meta_is_dropped(tmp_path: Path) -> None:
+    _write_session(tmp_path)
+    (tmp_path / "video").mkdir()
+    (tmp_path / "video" / "0002.h264").write_bytes(b"\x00")
+    info = load_session(tmp_path)
+    assert info.segments == []
+    assert any(w.startswith("segment 2 dropped") for w in info.warnings)
+
+
+def test_segment_with_meta_and_radar_only_is_kept(tmp_path: Path) -> None:
+    _write_session(tmp_path, segments=[{"index": 0}])
+    (tmp_path / "video").mkdir()
+    (tmp_path / "radar").mkdir()
+    (tmp_path / "video" / "0000.meta.json").write_text("[]")
+    (tmp_path / "radar" / "0000.csv").write_text("t_rx_ns,hex\n")
+    info = load_session(tmp_path)
+    assert [(s.index, s.h264, s.radar is not None) for s in info.segments] == [(0, None, True)]
+    assert info.warnings == []
+
+
+def test_session_json_missing(tmp_path: Path) -> None:
+    with pytest.raises(SessionError, match=r"cannot read .*session\.json"):
+        load_session(tmp_path)
+
+
+def test_session_json_malformed(tmp_path: Path) -> None:
+    (tmp_path / "session.json").write_text("{not json")
+    with pytest.raises(SessionError, match="is not valid JSON"):
+        load_session(tmp_path)
+
+
+def test_session_json_not_an_object(tmp_path: Path) -> None:
+    (tmp_path / "session.json").write_text("[1, 2]")
+    with pytest.raises(SessionError, match="is not a JSON object"):
+        load_session(tmp_path)
+
+
+def test_malformed_clock_sample_is_skipped_with_warning(tmp_path: Path) -> None:
+    good = {"label": "start", "boottime_ns": 1, "realtime_ns": 2}
+    _write_session(tmp_path, clock_samples=[good, {"label": "bad"}])
+    info = load_session(tmp_path)
+    assert [a.label for a in info.anchors] == ["start"]
+    assert any(w.startswith("ignored malformed clock sample") for w in info.warnings)
 
 
 def test_missing_optional_keys_do_not_crash(tmp_path: Path) -> None:
@@ -56,7 +118,7 @@ def test_missing_optional_keys_do_not_crash(tmp_path: Path) -> None:
 
 def test_unknown_format_version_refused(tmp_path: Path) -> None:
     (tmp_path / "session.json").write_text(json.dumps({"format_version": 2}))
-    with pytest.raises(SessionError, match="2"):
+    with pytest.raises(SessionError, match="format_version 2"):
         load_session(tmp_path)
 
 

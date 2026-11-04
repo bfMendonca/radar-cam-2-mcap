@@ -31,6 +31,17 @@ Segments that are not selected, or are named by ``--unlisted``, are left out of 
 The source session only has to contain the first ``N`` frames' worth of each ``.h264``
 (the script reads just that prefix), so it can be a partial copy of a large session.
 Nothing in SESSION_DIR is modified. Only the standard library is used.
+
+Radar-only mode::
+
+    python scripts/make_fixture.py SESSION_DIR OUT_DIR --radar-lines 1-16,318-400
+
+writes just ``OUT_DIR/radar/0000.csv`` (line numbers are 1-based, line 1 is the header;
+``--radar-segment`` picks another segment) with those lines verbatim, original timestamps
+unchanged, plus a ``README.txt`` naming the source session and slice. No video, meta or
+``session.json`` is written and ``--frames`` is not used. ``tests/fixtures/radar_targets``
+is ``--radar-lines 1-16,318-400`` of session s000060 (lines 2-16 are radar-configuration
+command ACKs, 318-400 a run of data frames with targets, many split across reads).
 """
 
 from __future__ import annotations
@@ -171,6 +182,24 @@ def build(
     (out / "session.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 
 
+def build_radar_only(session: Path, out: Path, spec: str, segment: int) -> None:
+    lines = (session / "radar" / f"{segment:04d}.csv").read_text(encoding="utf-8").split("\n")
+    picked: list[str] = []
+    for part in spec.split(","):
+        lo, _, hi = part.partition("-")
+        first, last = int(lo), int(hi or lo)
+        picked.extend(lines[first - 1 : last])
+    (out / "radar").mkdir(parents=True, exist_ok=True)
+    (out / "radar" / f"{segment:04d}.csv").write_text("\n".join(picked) + "\n", encoding="utf-8")
+    (out / "README.txt").write_text(
+        f"Radar-only fixture: radar/{segment:04d}.csv is lines {spec} (1-based, line 1 is the\n"
+        f"header) of radar/{segment:04d}.csv of the real session {session.name}, verbatim, with\n"
+        "original t_rx_ns. There is no session.json. Reads are fragmented, so a data frame\n"
+        "often spans two lines. Built by scripts/make_fixture.py --radar-lines.\n",
+        encoding="utf-8",
+    )
+
+
 def _indexes(text: str) -> list[int]:
     return [int(x) for x in text.split(",") if x]
 
@@ -179,11 +208,18 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0] if __doc__ else None)
     ap.add_argument("session_dir", type=Path)
     ap.add_argument("out_dir", type=Path)
-    ap.add_argument("--frames", type=int, required=True, help="frames to keep per segment")
+    ap.add_argument("--frames", type=int, help="frames to keep per segment")
+    ap.add_argument("--radar-lines", help="radar-only mode: 1-based line ranges, e.g. 1-16,318-400")
+    ap.add_argument("--radar-segment", type=int, default=0, help="segment for --radar-lines")
     ap.add_argument("--segments", type=_indexes, help="comma separated segment indexes")
     ap.add_argument("--unlisted", type=_indexes, default=[], help="write but do not list")
     ap.add_argument("--no-frames-csv", type=_indexes, default=[], help="omit frames.csv")
     args = ap.parse_args(argv)
+    if args.radar_lines:
+        build_radar_only(args.session_dir, args.out_dir, args.radar_lines, args.radar_segment)
+        return 0
+    if args.frames is None:
+        ap.error("--frames is required unless --radar-lines is given")
     build(
         args.session_dir,
         args.out_dir,

@@ -1,4 +1,4 @@
-Radar-only fixture: radar/0000.csv taken verbatim (original t_rx_ns) from the real session
-s000060: the header, lines 2-16 (command ACKs from radar configuration, including a read
-that carries a data frame fused with an ACK) and lines 318-400 (a contiguous run of data
-frames, mostly with 1-3 targets, several split across two reads). There is no session.json.
+Radar-only fixture: radar/0000.csv is lines 1-16,318-400 (1-based, line 1 is the
+header) of radar/0000.csv of the real session s000060, verbatim, with
+original t_rx_ns. There is no session.json. Reads are fragmented, so a data frame
+often spans two lines. Built by scripts/make_fixture.py --radar-lines.
