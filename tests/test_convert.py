@@ -28,6 +28,12 @@ FIXTURES = Path(__file__).parent / "fixtures"
 CFG = Config()
 
 
+COMPLETE_NOTES = [
+    "radar decoding problems: trailing_bytes=12",
+    "recovered 14 short radar data frames: reported count exceeds targets present",
+]
+
+
 def _tree_hash(root: Path) -> str:
     h = hashlib.sha256()
     for p in sorted(root.rglob("*")):
@@ -95,9 +101,9 @@ def test_convert_counts_and_order(name: str, tmp_path: Path) -> None:
 
 def test_convert_complete_fixture(tmp_path: Path) -> None:
     out, res = _convert("complete_2seg", tmp_path)
-    # no session-level problems; only converter findings about the data (gaps, radar bytes)
-    assert not any("session" in w or "unsynced" in w or "anchor" in w for w in res.warnings)
-    assert not any("wall-clock samples differ" in w for w in res.warnings)
+    # The fixture is a trimmed excerpt, so the 0->1 gap is ~300 s (WARN); nothing else warns.
+    assert res.warnings == ["segment gap 0->1: 299632291000 ns"]
+    assert res.notes == COMPLETE_NOTES
     meta = _metadata(out)
     assert meta["radar_cam_2_mcap"]["contract_version"] == "0.1"
     assert radar_cam_2_mcap.CONTRACT_VERSION == "0.1"
@@ -106,6 +112,7 @@ def test_convert_complete_fixture(tmp_path: Path) -> None:
     assert meta["radar_cam_2_mcap"]["time_base"] == "wall"
     assert meta["radar_cam_2_mcap"]["image_format"] == "jpeg"
     assert json.loads(meta["radar_cam_2_mcap"]["warnings"]) == res.warnings
+    assert json.loads(meta["radar_cam_2_mcap"]["notes"]) == res.notes
     src = meta["source_session"]
     assert src["session_id"] == "s000066"
     assert src["state"] == "complete"
@@ -495,3 +502,126 @@ def test_event_without_boottime_skipped_with_warning(tmp_path: Path) -> None:
     rec = [m for m in msgs if m.ros_msg.name == "radar_cam_recorder"]
     assert len(rec) == len(_boot_events("complete_2seg"))
     assert [m for m in msgs if "without boottime_ns" in m.ros_msg.msg]
+
+
+_UNSYNCED_MSG = (
+    "session time is unsynced: wall-clock timestamps are only as good as the Pi's clock "
+    "at recording time"
+)
+_PINNED = {
+    "complete_2seg": (["segment gap 0->1: 299632291000 ns"], COMPLETE_NOTES),
+    "in_progress_unlisted": (
+        [
+            "session is still in progress (recorder did not close it)",
+            "segment 3 is on disk but not listed in session.json",
+            "boot time follows the last clock anchor (no stop anchor?); using its constant offset",
+            _UNSYNCED_MSG,
+            "segment gap 0->1: 282269616000 ns",
+            "segment gap 1->2: 300550242000 ns",
+            "segment gap 2->3: 300713524000 ns",
+        ],
+        [],
+    ),
+    "interrupted": (
+        [
+            "session was interrupted; the last segment may be truncated",
+            "segment 1 is on disk but not listed in session.json",
+            "boot time precedes the first clock anchor; using its constant offset",
+            "boot time follows the last clock anchor (no stop anchor?); using its constant offset",
+            _UNSYNCED_MSG,
+            "segment gap 0->1: 287020921000 ns",
+        ],
+        [],
+    ),
+}
+
+
+@pytest.mark.parametrize("name", list(_PINNED))
+def test_fixture_warning_note_split_is_pinned(name: str, tmp_path: Path) -> None:
+    out, res = _convert(name, tmp_path)
+    warnings, notes = _PINNED[name]
+    assert res.warnings == warnings
+    assert res.notes == notes
+    md = _metadata(out)["radar_cam_2_mcap"]
+    assert json.loads(md["warnings"]) == warnings
+    assert json.loads(md["notes"]) == notes
+    levels = {m.ros_msg.msg: m.ros_msg.level for m in _events(out)}
+    for w in warnings:
+        assert levels[w] == 30
+    for n in notes:
+        assert levels[n] == 20
+
+
+def test_radar_summary_with_only_trailing_bytes_is_a_note(tmp_path: Path) -> None:
+    _out, res = _convert("complete_2seg", tmp_path)
+    assert "radar decoding problems: trailing_bytes=12" in res.notes
+    assert not any("radar decoding" in w for w in res.warnings)
+
+
+def test_radar_summary_with_framing_errors_is_a_warning(tmp_path: Path) -> None:
+    src = _copy("complete_2seg", tmp_path)
+    # data header, length 2, two payload bytes, wrong footer
+    # then an unfinished frame at the very end of the stream (trailing bytes)
+    _append_radar(src, "999999999999999,f4f3f2f1020000000badf00d\n999999999999999,f4f3f2f11000\n")
+    out, res = _convert_path(src, tmp_path)
+    hits = [w for w in res.warnings if w.startswith("radar decoding problems")]
+    assert len(hits) == 1
+    assert "framing_errors=" in hits[0] and "trailing_bytes=" in hits[0]
+    assert hits[0] not in res.notes
+    levels = [m.ros_msg.level for m in _events(out) if m.ros_msg.msg == hits[0]]
+    assert levels == [30]
+
+
+def test_per_file_notes_metadata(tmp_path: Path) -> None:
+    res = convert_session(
+        FIXTURES / "complete_2seg", tmp_path / "o", CFG, ConvertOptions(per_segment=True)
+    )
+    n0, n1 = (json.loads(_metadata(p)["radar_cam_2_mcap"]["notes"]) for p in res.outputs)
+    assert set(n0) <= set(n1) <= set(res.notes)
+    assert res.notes == n1  # metadata lists accumulate over the run
+    assert any(n.startswith("recovered") for n in res.notes)
+
+
+def test_first_sample_not_suppressed_by_missing_wall_clock(tmp_path: Path) -> None:
+    src = _copy("complete_2seg", tmp_path)
+    meta = src / "video" / "0000.meta.json"
+    data = json.loads(meta.read_text())
+    del data[0]["FrameWallClock"]
+    meta.write_text(json.dumps(data))
+    out, _ = _convert_path(src, tmp_path)
+    md = _metadata(out)["radar_cam_2_mcap"]
+    base_tmp = tmp_path / "base"
+    base_tmp.mkdir()
+    _, _ = _convert("complete_2seg", base_tmp)
+    base = _metadata(next((base_tmp / "out").glob("*.mcap")))["radar_cam_2_mcap"]
+    # frames 0 (no clock, skipped) and 1 (first with a clock: sampled) and 25 -> same count
+    # as the unmodified run, where frame 0 is the segment's first sample
+    assert md["crosscheck_samples"] == base["crosscheck_samples"]
+
+
+def _rename_segment(src: Path, old: int, new: int) -> None:
+    for f in list((src / "video").glob(f"{old:04d}.*")) + list(
+        (src / "radar").glob(f"{old:04d}.*")
+    ):
+        f.rename(f.with_name(f.name.replace(f"{old:04d}", f"{new:04d}", 1)))
+
+
+def test_gap_label_uses_actual_index_when_segment_missing(tmp_path: Path) -> None:
+    src = _copy("complete_2seg", tmp_path)
+    _rename_segment(src, 1, 2)
+    _out, res = _convert_path(src, tmp_path)
+    assert any(w.startswith("segment gap 0->2: ") for w in res.warnings + res.notes)
+    assert not any("segment gap 0->1" in w for w in res.warnings + res.notes)
+
+
+def test_zero_frame_segment_is_skipped_in_gap_labels(tmp_path: Path) -> None:
+    src = _copy("complete_2seg", tmp_path)
+    _rename_segment(src, 1, 2)
+    # segment 1: radar and meta only, no h264, hence no frames
+    shutil.copy(src / "video" / "0002.meta.json", src / "video" / "0001.meta.json")
+    shutil.copy(src / "radar" / "0002.csv", src / "radar" / "0001.csv")
+    out, res = _convert_path(src, tmp_path)
+    segs = {s["index"]: s for s in json.loads(_metadata(out)["segments"]["segments"])}
+    assert segs[1]["frames"] == 0 and segs[1]["radar_reports"] > 0
+    gaps = [w for w in res.warnings + res.notes if w.startswith("segment gap")]
+    assert len(gaps) == 1 and gaps[0].startswith("segment gap 0->2: ")

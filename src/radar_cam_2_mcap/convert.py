@@ -15,6 +15,11 @@ the ``warnings`` metadata. With ``per_segment`` each recorder event goes to the 
 segment span contains it (before the first span: first file; after: last file), segment-level
 findings to the file they concern and session-level ones to the first file.
 
+Segment gap labels use the actual segment indexes of consecutive segments that have frames,
+so a missing or frameless segment gives e.g. ``0->2``. INFO-level findings (gaps under 10 s,
+recovered radar frames, trailing bytes alone) go to ``ConvertResult.notes`` and the ``notes``
+metadata; ``warnings`` holds WARN-level findings only.
+
 ``/camera/camera_info`` is written once per file (at the time of the file's first message),
 not repeated with every frame. Same for ``/tf_static``.
 """
@@ -88,6 +93,7 @@ class ConvertOptions:
 class ConvertResult:
     outputs: list[Path] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)  # INFO-level findings (not warnings)
 
 
 @dataclass
@@ -138,7 +144,7 @@ class _Run:
         self.video_warnings: list[str] = []
         self.out_of_order: dict[str, int] = {}
         self.quality = time_quality(session)
-        self.findings: list[str] = []  # converter findings beyond the run-level warning lists
+        self.findings: list[_Finding] = []  # converter findings beyond the run-level warning lists
         self.events: list[dict[str, Any]] = []
         self.event_warnings: list[str] = []
         for ev in load_events(session.path / "events.jsonl"):
@@ -168,7 +174,10 @@ class _Run:
         ]
         if self.quality == "unsynced":
             out.append(_UNSYNCED)
-        return [*out, *self.findings]
+        return [*out, *(t for lvl, t in self.findings if lvl >= _WARN)]
+
+    def notes(self) -> list[str]:
+        return [t for lvl, t in self.findings if lvl < _WARN]
 
     def segment_span(self, seg: SegmentFiles) -> tuple[int, int] | None:
         """Boot-time span of a segment: first/last frame stamps, else first/last radar line."""
@@ -224,6 +233,7 @@ class _Run:
             first_ts: int | None = None
             last_sample: tuple[int, int] | None = None
             sampled = False
+            took_first = False
             for frame in iter_video_frames(
                 seg,
                 cfg.image,
@@ -249,7 +259,8 @@ class _Run:
                 wall_us = frame.meta.frame_wall_clock_us
                 if wall_us is not None:
                     last_sample = (boot, wall_us)
-                    sampled = n % _SAMPLE_STRIDE == 0 or first_ts == boot
+                    sampled = n % _SAMPLE_STRIDE == 0 or not took_first
+                    took_first = True
                     if sampled:
                         self.samples.append(last_sample)
                 n += 1
@@ -362,16 +373,18 @@ class _Run:
         if bad:
             listing = ", ".join(f"{k}={v}" for k, v in bad.items())
             msg = f"radar decoding problems: {listing}"
-            out.append((_WARN, msg))
-            self.findings.append(msg)
+            # trailing bytes alone (a stream cut mid-frame) is expected, not a warning
+            level = _INFO if set(bad) == {"trailing_bytes"} else _WARN
+            out.append((level, msg))
+            self.findings.append((level, msg))
         if rstats.recovered_frames > 0:
             msg = (
                 f"recovered {rstats.recovered_frames} short radar data frames: "
                 "reported count exceeds targets present"
             )
             out.append((_INFO, msg))
-            self.findings.append(msg)
-        self.findings += [text for _, text in self.file_findings]
+            self.findings.append((_INFO, msg))
+        self.findings += self.file_findings
         if self.samples:
             worst = max(abs(self.timeline.to_wall_ns(b) - w * 1000) / 1e6 for b, w in self.samples)
             extra["crosscheck_max_diff_ms"] = f"{worst:.3f}"
@@ -380,7 +393,7 @@ class _Run:
         extra["crosscheck_samples"] = str(len(self.samples))
         for w in crosscheck(self.timeline, self.samples, self.cfg.time.crosscheck_tolerance_ms):
             out.append((_WARN, w))
-            self.findings.append(w)
+            self.findings.append((_WARN, w))
         return out
 
     def write_file(
@@ -474,6 +487,7 @@ class _Run:
                 "time_quality": self.quality,
                 "time_base": self.timeline.base,
                 "warnings": _json(warnings),
+                "notes": _json(self.notes()),
                 "image_format": cfg.image.format,
                 "image_quality": str(cfg.image.quality),
                 "image_subsampling": str(cfg.image.subsampling),
@@ -570,4 +584,6 @@ def convert_session(
         for tmp, _ in pairs:
             tmp.unlink(missing_ok=True)
         raise
-    return ConvertResult(outputs=[final for _, final in pairs], warnings=run.warnings())
+    return ConvertResult(
+        outputs=[final for _, final in pairs], warnings=run.warnings(), notes=run.notes()
+    )
