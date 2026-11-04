@@ -191,6 +191,55 @@ def _parse_transforms(items: Any) -> tuple[FrameTransform, ...]:
 
 _SECTIONS = ("image", "mcap", "camera", "topics", "radar", "time")
 
+# Distortion coefficient counts of the ROS camera models; other models are not checked.
+_DISTORTION_LEN = {"plumb_bob": 5, "rational_polynomial": 8, "equidistant": 4}
+_TOPIC_KEYS = (
+    "image",
+    "camera_info",
+    "camera_metadata",
+    "radar_scan",
+    "radar_status",
+    "events",
+    "tf_static",
+)
+
+
+def _validate(cfg: Config) -> None:
+    """Range, length and distinctness checks that the type checks cannot express."""
+
+    def need(ok: bool, msg: str) -> None:
+        if not ok:
+            raise ConfigError(msg)
+
+    img, cam = cfg.image, cfg.camera
+    need(1 <= img.quality <= 100, f"image.quality: {img.quality} not in 1..100")
+    need(
+        img.subsampling in (0, 1, 2),
+        f"image.subsampling: {img.subsampling} not 0 (4:4:4), 1 (4:2:2) or 2 (4:2:0)",
+    )
+    need(cfg.mcap.chunk_size > 0, f"mcap.chunk_size: {cfg.mcap.chunk_size} must be positive")
+    need(cfg.radar.angle_sign in (-1, 1), f"radar.angle_sign: {cfg.radar.angle_sign} not -1 or 1")
+    need(cam.width > 0, f"camera.width: {cam.width} must be positive")
+    need(cam.height > 0, f"camera.height: {cam.height} must be positive")
+    for key, n in (("k", 9), ("r", 9), ("p", 12)):
+        got = len(getattr(cam, key))
+        need(got == n, f"camera.{key}: expected {n} values, got {got}")
+    n_d = _DISTORTION_LEN.get(cam.distortion_model)
+    need(
+        n_d is None or len(cam.d) == n_d,
+        f"camera.d: {cam.distortion_model} needs {n_d} values, got {len(cam.d)}",
+    )
+    tol = cfg.time.crosscheck_tolerance_ms
+    need(
+        math.isfinite(tol) and tol >= 0,
+        f"time.crosscheck_tolerance_ms: {tol} must be a non-negative number",
+    )
+    by_name: dict[str, list[str]] = {}
+    for key in _TOPIC_KEYS:
+        by_name.setdefault(getattr(cfg.topics, key), []).append(key)
+    for name, keys in by_name.items():
+        need(len(keys) == 1, f"topics: {', '.join(keys)} all name {name!r}; topics must differ")
+
 
 def load_config(path: Path | None) -> Config:
     """Load defaults, or defaults overridden by the keys a TOML file names."""
@@ -210,4 +259,6 @@ def load_config(path: Path | None) -> Config:
     }
     if "transforms" in data:
         updates["transforms"] = _parse_transforms(data["transforms"])
-    return replace(cfg, **updates)
+    cfg = replace(cfg, **updates)
+    _validate(cfg)
+    return cfg

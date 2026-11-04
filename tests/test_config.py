@@ -87,3 +87,61 @@ def test_invert_direction_wrong_type_rejected(tmp_path: Path) -> None:
         path.write_text(f"[radar]\ninvert_direction = {bad}\n")
         with pytest.raises(ConfigError):
             load_config(path)
+
+
+@pytest.mark.parametrize(
+    ("toml", "needle"),
+    [
+        ("[image]\nquality = 0\n", "image.quality"),
+        ("[image]\nquality = 101\n", "image.quality"),
+        ("[image]\nsubsampling = 5\n", "image.subsampling"),
+        ("[image]\nsubsampling = -1\n", "image.subsampling"),
+        ("[mcap]\nchunk_size = 0\n", "mcap.chunk_size"),
+        ("[radar]\nangle_sign = 2\n", "radar.angle_sign"),
+        ("[radar]\nangle_sign = 0\n", "radar.angle_sign"),
+        ("[camera]\nk = [1.0, 2.0]\n", "camera.k"),
+        ("[camera]\nr = [1.0]\n", "camera.r"),
+        ("[camera]\np = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]\n", "camera.p"),
+        ("[camera]\nd = [0.0, 0.0, 0.0]\n", "camera.d"),
+        ("[camera]\nwidth = 0\n", "camera.width"),
+        ("[camera]\nheight = -4\n", "camera.height"),
+        ("[time]\ncrosscheck_tolerance_ms = -1.0\n", "time.crosscheck_tolerance_ms"),
+        ('[topics]\ncamera_metadata = "/camera/image/compressed"\n', "topics"),
+        ('[topics]\nevents = "/tf_static"\n', "topics"),
+    ],
+)
+def test_out_of_range_values_rejected(tmp_path: Path, toml: str, needle: str) -> None:
+    path = tmp_path / "c.toml"
+    path.write_text(toml)
+    with pytest.raises(ConfigError, match=needle.replace(".", r"\.")):
+        load_config(path)
+
+
+def test_in_range_edge_values_accepted(tmp_path: Path) -> None:
+    path = tmp_path / "c.toml"
+    path.write_text(
+        "[image]\nquality = 1\nsubsampling = 0\n[mcap]\nchunk_size = 1\n"
+        "[radar]\nangle_sign = -1\n"
+        '[camera]\ndistortion_model = "rational_polynomial"\n'
+        "d = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]\n"
+    )
+    cfg = load_config(path)
+    assert cfg.radar.angle_sign == -1 and len(cfg.camera.d) == 8
+
+
+def test_duplicate_topic_error_names_both_keys(tmp_path: Path) -> None:
+    path = tmp_path / "c.toml"
+    path.write_text('[topics]\nradar_status = "/radar/scan"\n')
+    with pytest.raises(ConfigError, match=r"radar_scan.*radar_status"):
+        load_config(path)
+
+
+def test_config_range_error_exits_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from radar_cam_2_mcap.cli import main
+
+    path = tmp_path / "c.toml"
+    path.write_text("[radar]\nangle_sign = 2\n")
+    fixture = Path(__file__).parent / "fixtures" / "interrupted"
+    assert main(["convert", str(fixture), "-o", str(tmp_path / "o"), "--config", str(path)]) == 2
+    assert "angle_sign" in capsys.readouterr().err
+    assert not (tmp_path / "o").exists()
