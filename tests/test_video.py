@@ -202,3 +202,77 @@ def test_jpeg_uses_420_subsampling() -> None:
     img = Image.open(io.BytesIO(f.data))
     assert isinstance(img, JpegImagePlugin.JpegImageFile)
     assert JpegImagePlugin.get_sampling(img) == 2
+
+
+def _corrupt_frame(src: Path, dst: Path, frame: int) -> None:
+    """Copy ``src`` with the payload of slice NAL number ``frame`` (0-based) overwritten."""
+    data = bytearray(src.read_bytes())
+    i = seen = 0
+    while True:
+        i = data.index(b"\x00\x00\x01", i) + 3
+        if data[i] & 0x1F in (1, 5):
+            if seen == frame:
+                break
+            seen += 1
+    end = data.index(b"\x00\x00\x01", i)
+    data[i + 1 : end] = b"\xff" * (end - i - 1)
+    dst.write_bytes(bytes(data))
+
+
+def test_undecodable_frame_skips_its_meta_entry(tmp_path: Path) -> None:
+    """A frame the decoder drops must not shift the timestamps of the frames after it."""
+    h264 = tmp_path / "0000.h264"
+    _corrupt_frame(FIX / "0000.h264", h264, 10)
+    seg = _seg(h264, FIX / "0000.meta.json")
+    warnings: list[str] = []
+    frames = list(iter_video_frames(seg, ImageConfig(), allow_prefix=False, warnings=warnings))
+    metas = read_frame_meta(FIX / "0000.meta.json")
+    assert [f.meta.index for f in frames] == [i for i in range(len(metas)) if i != 10]
+    reference = {
+        f.meta.index: f.data
+        for f in iter_video_frames(_fixture_seg(), ImageConfig(), allow_prefix=False, warnings=[])
+    }
+    # frames before the bad one are untouched; later P-frames decode (concealed) at their own
+    # meta entry, which is the point: frame 11 carries meta 11, not meta 12
+    assert all(f.data == reference[f.meta.index] for f in frames if f.meta.index < 10)
+    assert all(f.meta.sensor_ts_ns == metas[f.meta.index].sensor_ts_ns for f in frames)
+    assert len(warnings) == 1
+    assert "1 frame(s) not decoded" in warnings[0] and "10" in warnings[0]
+    assert "not shifted" in warnings[0]
+
+
+def test_lost_tail_frames_reported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Frames that never come out of the decoder at the end are reported, not hidden."""
+    import av.video.stream
+
+    real = av.video.stream.VideoStream.decode
+
+    def decode(self, packet=None):  # type: ignore[no-untyped-def]
+        frames = real(self, packet)
+        return [f for f in frames if f.pts is None or f.pts < 37]
+
+    monkeypatch.setattr(av.video.stream.VideoStream, "decode", decode)
+    warnings: list[str] = []
+    frames = list(
+        iter_video_frames(_fixture_seg(), ImageConfig(), allow_prefix=False, warnings=warnings)
+    )
+    assert [f.meta.index for f in frames] == list(range(37))
+    assert len(warnings) == 1 and "3 frame(s) not decoded" in warnings[0]
+
+
+def test_frame_without_packet_index_is_a_pairing_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    import av.video.stream
+
+    from radar_cam_2_mcap.video import FramePairingError
+
+    real = av.video.stream.VideoStream.decode
+
+    def decode(self, packet=None):  # type: ignore[no-untyped-def]
+        frames = real(self, packet)
+        for f in frames:
+            f.pts = None
+        return frames
+
+    monkeypatch.setattr(av.video.stream.VideoStream, "decode", decode)
+    with pytest.raises(FramePairingError):
+        list(iter_video_frames(_fixture_seg(), ImageConfig(), allow_prefix=False, warnings=[]))

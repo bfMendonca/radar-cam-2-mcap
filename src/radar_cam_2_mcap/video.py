@@ -1,7 +1,11 @@
 """Video segment reading: meta.json parsing, H.264 frame counting, decode and image encoding.
 
-``meta.json`` is the authority for per-frame timestamps; the H.264 stream is decoded and paired
-with it in order.
+``meta.json`` is the authority for per-frame timestamps. The H.264 stream is demuxed into packets
+(one access unit, so one frame, per packet: the recorder writes one slice per frame and no
+B-frames) and each packet is stamped with its index before decoding. The decoder carries that
+index through to the frame, so a frame is paired with ``metas[index]`` even when the decoder
+drops a packet (corrupt data) or delays output. A dropped frame skips its meta entry and is
+reported; it never shifts the timestamps of the frames after it.
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ from radar_cam_2_mcap.session import SegmentFiles
 __all__ = [
     "FrameCountMismatch",
     "FrameMeta",
+    "FramePairingError",
     "VideoFrame",
     "count_h264_frames",
     "iter_video_frames",
@@ -35,6 +40,10 @@ _PNG_COMPRESS_LEVEL = 6
 
 class FrameCountMismatch(Exception):
     """The H.264 stream and meta.json disagree on the number of frames."""
+
+
+class FramePairingError(Exception):
+    """Decoded frames cannot be matched to meta.json entries by packet index."""
 
 
 @dataclass(frozen=True)
@@ -147,23 +156,65 @@ def iter_video_frames(
             f"(h264 {n_stream}, meta.json {len(metas)}); converting the common prefix"
         )
     expected = min(n_stream, len(metas))
-    produced = 0
-    if expected > 0:
-        with av.open(str(seg.h264), format="h264") as container:
-            for frame in container.decode(video=0):
-                if produced >= expected:
-                    break
-                rgb = frame.to_ndarray(format="rgb24")
-                data, fmt = _encode(rgb, image)
+    if expected == 0:
+        return
+    produced: list[int] = []
+    packets = 0
+    with av.open(str(seg.h264), format="h264") as container:
+        stream = container.streams.video[0]
+
+        def decoded(packet: Any) -> list[Any]:
+            try:
+                return list(stream.decode(packet))
+            except av.error.FFmpegError:
+                return []  # undecodable packet: its frame is reported missing below
+
+        def pair(frames: list[Any]) -> Iterator[VideoFrame]:
+            for frame in frames:
+                idx = frame.pts
+                if (
+                    not isinstance(idx, int)
+                    or idx >= expected
+                    or (produced and idx <= produced[-1])
+                ):
+                    raise FramePairingError(
+                        f"segment {seg.index:04d}: decoder returned a frame with packet index "
+                        f"{idx!r} after {produced[-1] if produced else None}; cannot pair frames "
+                        "with meta.json"
+                    )
+                data, fmt = _encode(frame.to_ndarray(format="rgb24"), image)
+                produced.append(idx)
                 yield VideoFrame(
-                    meta=metas[produced],
+                    meta=metas[idx],
                     data=data,
                     fmt=fmt,
                     width=int(frame.width),
                     height=int(frame.height),
                 )
-                produced += 1
-    if produced < expected:
+
+        for packet in container.demux(stream):
+            if packet.size == 0:
+                continue  # demuxer's flush packet; flushed explicitly below
+            if packets >= expected:
+                break
+            packet.pts = packet.dts = packets
+            packets += 1
+            yield from pair(decoded(packet))
+        yield from pair(decoded(None))
+    if packets < expected:
+        msg = (
+            f"segment {seg.index:04d}: the demuxer found {packets} frames but {n_stream} slice "
+            f"NAL units were counted (meta.json has {len(metas)}); frames cannot be paired "
+            "reliably"
+        )
+        if not allow_prefix:
+            raise FramePairingError(msg)
+        warnings.append(msg)
+    lost = sorted(set(range(packets)) - set(produced))
+    if lost:
+        shown = ", ".join(map(str, lost[:10])) + (", ..." if len(lost) > 10 else "")
         warnings.append(
-            f"segment {seg.index:04d}: decoder produced {produced} of {expected} expected frames"
+            f"segment {seg.index:04d}: {len(lost)} frame(s) not decoded "
+            f"(frame index {shown}); their meta.json entries were skipped, timestamps of the "
+            "other frames are not shifted"
         )
