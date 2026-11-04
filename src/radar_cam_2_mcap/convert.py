@@ -46,10 +46,16 @@ from radar_cam_2_mcap.radar import (
     flush_trailing,
     iter_radar_reports,
 )
-from radar_cam_2_mcap.session import SegmentFiles, SessionInfo, load_events, load_session
+from radar_cam_2_mcap.session import (
+    SegmentFiles,
+    SessionError,
+    SessionInfo,
+    load_events,
+    load_session,
+)
 from radar_cam_2_mcap.sink import McapSink
 from radar_cam_2_mcap.timebase import Timeline, crosscheck, time_quality
-from radar_cam_2_mcap.video import iter_video_frames, read_frame_meta
+from radar_cam_2_mcap.video import check_frame_counts, iter_video_frames, read_frame_meta
 
 __all__ = [
     "ConvertOptions",
@@ -597,6 +603,11 @@ def convert_session(
     timeline = Timeline(session.anchors, opts.time_base or cfg.time.base)
     out_dir = Path(out_dir)
 
+    if opts.per_segment and not session.segments:
+        raise SessionError(
+            "no convertible segments, so --per-segment has no file to write "
+            "(see the session warnings; without --per-segment one file is still written)"
+        )
     finals = output_paths(session, out_dir, opts.per_segment)
     if opts.per_segment:
         groups = [(final, [seg]) for final, seg in zip(finals, session.segments, strict=True)]
@@ -606,6 +617,8 @@ def convert_session(
         for final, _ in groups:
             if final.exists():
                 raise OutputExistsError(f"{final} exists (use --overwrite to replace it)")
+    if not opts.allow_prefix:
+        check_frame_counts(session.segments)  # fail fast, before any decoding
     out_dir.mkdir(parents=True, exist_ok=True)
 
     run = _Run(session, cfg, opts, timeline)

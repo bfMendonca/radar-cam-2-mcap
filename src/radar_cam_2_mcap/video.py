@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import io
 import json
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -28,6 +28,7 @@ __all__ = [
     "FrameMeta",
     "FramePairingError",
     "VideoFrame",
+    "check_frame_counts",
     "count_h264_frames",
     "iter_video_frames",
     "read_frame_meta",
@@ -113,6 +114,28 @@ def count_h264_frames(path: Path, *, chunk_size: int = _CHUNK) -> int:
     return count
 
 
+def _mismatch(seg: SegmentFiles, n_stream: int, n_meta: int) -> str:
+    return (
+        f"segment {seg.index:04d}: h264 has {n_stream} frames but meta.json has "
+        f"{n_meta}; use --allow-prefix to convert the common prefix"
+    )
+
+
+def check_frame_counts(segments: Iterable[SegmentFiles]) -> None:
+    """Raise FrameCountMismatch for the first segment whose stream and meta.json disagree.
+
+    Counts NAL units and parses meta.json only (no decoding), so a damaged session fails in
+    seconds instead of after the segments before the bad one have been converted.
+    """
+    for seg in segments:
+        if seg.h264 is None or seg.meta is None:
+            continue
+        n_stream = count_h264_frames(seg.h264)
+        n_meta = len(read_frame_meta(seg.meta))
+        if n_stream != n_meta:
+            raise FrameCountMismatch(_mismatch(seg, n_stream, n_meta))
+
+
 def _encode(rgb: Any, image: ImageConfig) -> tuple[bytes, Literal["jpeg", "png"]]:
     img = Image.fromarray(rgb, "RGB")
     out = io.BytesIO()
@@ -139,10 +162,7 @@ def iter_video_frames(
     n_stream = count_h264_frames(seg.h264)
     if n_stream != len(metas):
         if not allow_prefix:
-            raise FrameCountMismatch(
-                f"segment {seg.index:04d}: h264 has {n_stream} frames but meta.json has "
-                f"{len(metas)}; use --allow-prefix to convert the common prefix"
-            )
+            raise FrameCountMismatch(_mismatch(seg, n_stream, len(metas)))
         longer, diff = (
             ("h264", n_stream - len(metas))
             if n_stream > len(metas)

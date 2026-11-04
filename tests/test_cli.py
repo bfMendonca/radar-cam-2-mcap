@@ -136,7 +136,7 @@ def test_exit_1_and_no_output_file_on_failure(
     assert "failed:" in cap.err and "--allow-prefix to convert the common prefix" in cap.err
     assert cap.err.count("--allow-prefix") == 1  # hint not appended twice
     assert "1 failed" in cap.err
-    assert list(out.iterdir()) == []  # neither final nor .tmp
+    assert not out.exists()  # pre-pass fails first: neither final nor temp file
 
 
 def test_allow_prefix_converts_broken_session(tmp_path: Path) -> None:

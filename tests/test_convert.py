@@ -246,7 +246,7 @@ def test_failure_leaves_no_final_file(tmp_path: Path) -> None:
     out = tmp_path / "o"
     with pytest.raises(FrameCountMismatch):
         convert_session(src, out, CFG, ConvertOptions())
-    assert list(out.iterdir()) == []
+    assert not out.exists()  # the frame-count pre-pass fails before anything is created
     # allow_prefix converts, with a warning
     res = convert_session(src, out, CFG, ConvertOptions(allow_prefix=True))
     assert any("common prefix" in w for w in res.warnings)
@@ -667,3 +667,59 @@ def test_camera_info_size_mismatch_warns_once(tmp_path: Path) -> None:
             FIXTURES / "complete_2seg", tmp_path / "o2", CFG, ConvertOptions()
         ).warnings
     )
+
+
+def test_frame_count_mismatch_found_before_any_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bad segment is the last one; the pre-pass fails before segment 0 is decoded."""
+    from radar_cam_2_mcap import convert
+
+    src = _copy("complete_2seg", tmp_path)
+    meta = src / "video" / "0001.meta.json"
+    meta.write_text(json.dumps([m.fields for m in read_frame_meta(meta)][:-3]))
+
+    def no_write(*a: object, **k: object) -> None:
+        raise AssertionError("conversion started before the frame-count check")
+
+    monkeypatch.setattr(convert._Run, "write_file", no_write)
+    with pytest.raises(FrameCountMismatch, match="segment 0001"):
+        convert_session(src, tmp_path / "o", CFG, ConvertOptions())
+    with pytest.raises(AssertionError):  # --allow-prefix skips the pre-pass
+        convert_session(src, tmp_path / "o", CFG, ConvertOptions(allow_prefix=True))
+
+
+def test_per_segment_without_segments_fails_clearly(tmp_path: Path) -> None:
+    from radar_cam_2_mcap.session import SessionError
+
+    src = _copy("interrupted", tmp_path)
+    shutil.rmtree(src / "video")
+    shutil.rmtree(src / "radar")
+    out = tmp_path / "o"
+    with pytest.raises(SessionError, match="no convertible segments"):
+        convert_session(src, out, CFG, ConvertOptions(per_segment=True))
+    assert not out.exists() or list(out.iterdir()) == []
+
+
+def test_failure_mid_write_removes_temp_and_keeps_existing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pre-pass now catches count mismatches, so force a failure while writing."""
+    from radar_cam_2_mcap import mapping
+
+    out = tmp_path / "o"
+    convert_session(FIXTURES / "complete_2seg", out, CFG, ConvertOptions())
+    good = (out / "s000066.mcap").read_bytes()
+    real = mapping.compressed_image
+    calls = itertools.count()
+
+    def flaky(*a: Any, **k: Any) -> Any:
+        if next(calls) == 30:
+            raise RuntimeError("disk on fire")
+        return real(*a, **k)
+
+    monkeypatch.setattr(mapping, "compressed_image", flaky)
+    with pytest.raises(RuntimeError, match="disk on fire"):
+        convert_session(FIXTURES / "complete_2seg", out, CFG, ConvertOptions(overwrite=True))
+    assert (out / "s000066.mcap").read_bytes() == good
+    assert sorted(p.name for p in out.iterdir()) == ["s000066.mcap"]
