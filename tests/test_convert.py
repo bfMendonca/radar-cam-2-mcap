@@ -649,3 +649,21 @@ def test_output_file_mode_follows_umask(tmp_path: Path) -> None:
     finally:
         os.umask(old)
     assert stat.S_IMODE(res.outputs[0].stat().st_mode) == 0o644
+
+
+def test_camera_info_size_mismatch_warns_once(tmp_path: Path) -> None:
+    from radar_cam_2_mcap.config import CameraIntrinsics
+
+    cfg = Config(camera=CameraIntrinsics(width=640, height=480))
+    res = convert_session(FIXTURES / "complete_2seg", tmp_path / "o", cfg, ConvertOptions())
+    hits = [w for w in res.warnings if "differs from camera_info" in w]
+    assert hits == [
+        "decoded frame size 1296x972 differs from camera_info 640x480 ([camera] width/height); "
+        "intrinsics may not match the images"
+    ]
+    assert not any(
+        "differs from camera_info" in w
+        for w in convert_session(
+            FIXTURES / "complete_2seg", tmp_path / "o2", CFG, ConvertOptions()
+        ).warnings
+    )

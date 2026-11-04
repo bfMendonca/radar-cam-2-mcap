@@ -167,6 +167,7 @@ class _Run:
         self.file_findings: list[_Finding] = []
         self.samples: list[tuple[int, int]] = []
         self._seen = {"video": 0, "timeline": 0}
+        self._size_warned = False
         self._seen_ooo: dict[str, int] = {}
 
     def warnings(self) -> list[str]:
@@ -248,6 +249,16 @@ class _Run:
                 allow_prefix=self.opts.allow_prefix,
                 warnings=self.video_warnings,
             ):
+                if not self._size_warned and (frame.width, frame.height) != (
+                    cfg.camera.width,
+                    cfg.camera.height,
+                ):
+                    self._size_warned = True
+                    self.video_warnings.append(
+                        f"decoded frame size {frame.width}x{frame.height} differs from "
+                        f"camera_info {cfg.camera.width}x{cfg.camera.height} "
+                        "([camera] width/height); intrinsics may not match the images"
+                    )
                 boot = frame.meta.sensor_ts_ns
                 log = tl.to_log_ns(boot)
                 self._track(last, cfg.topics.image, log)
