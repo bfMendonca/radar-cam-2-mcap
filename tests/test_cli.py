@@ -405,3 +405,29 @@ def test_quiet_success_with_notes_prints_only_paths(
     cap = capsys.readouterr()
     assert cap.out.splitlines() == [str(out / "s000066.mcap")]
     assert "ok:" not in cap.err and "note:" not in cap.err
+
+
+@pytest.mark.parametrize("extra", [[], ["--overwrite"], ["--overwrite", "--jobs", "2"]])
+def test_colliding_output_names_refused_before_converting(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], extra: list[str]
+) -> None:
+    """Two sessions with the same session_id (two Pis, or a copied folder) collide."""
+    batch = tmp_path / "batch"
+    batch.mkdir()
+    a = _copy("complete_2seg", batch, "pi_a")
+    b = _copy("complete_2seg", batch, "pi_b")
+    _copy("interrupted", batch, "pi_c")
+    out = tmp_path / "out"
+    assert main(["convert", str(batch), "-o", str(out), *extra]) == 2
+    cap = capsys.readouterr()
+    assert cap.out == ""
+    assert "s000066.mcap" in cap.err and str(a) in cap.err and str(b) in cap.err
+    assert not out.exists() or list(out.iterdir()) == []
+
+
+def test_per_segment_collision_detected(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    a = _copy("complete_2seg", tmp_path, "a")
+    b = _copy("complete_2seg", tmp_path, "b")
+    out = tmp_path / "out"
+    assert main(["convert", str(a), str(b), "-o", str(out), "--per-segment"]) == 2
+    assert "s000066-seg0000.mcap" in capsys.readouterr().err

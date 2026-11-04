@@ -1,8 +1,9 @@
 """Command line interface.
 
 Exit codes: 0 every session converted without WARN-level findings; 3 every session converted
-but at least one has warnings; 1 at least one session failed; 2 usage or config error (before
-any conversion starts). Output paths go to stdout, one per line; the summary goes to stderr.
+but at least one has warnings; 1 at least one session failed; 2 usage or config error, or two
+sessions that would write the same output file (before any conversion starts). Output paths go
+to stdout, one per line; the summary goes to stderr.
 """
 
 from __future__ import annotations
@@ -18,7 +19,13 @@ from typing import Literal
 
 from radar_cam_2_mcap import __version__
 from radar_cam_2_mcap.config import Config, ConfigError, load_config
-from radar_cam_2_mcap.convert import ConvertOptions, OutputExistsError, convert_session
+from radar_cam_2_mcap.convert import (
+    ConvertOptions,
+    OutputExistsError,
+    convert_session,
+    output_paths,
+)
+from radar_cam_2_mcap.session import SessionError, load_session
 from radar_cam_2_mcap.video import FrameCountMismatch
 
 log = logging.getLogger(__name__)
@@ -54,7 +61,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "Convert sessions to MCAP. A path containing session.json is one session; any "
             "other directory is a batch directory whose child folders containing session.json "
             "are converted. Exit codes: 0 ok, 3 ok with warnings, 1 a session failed, "
-            "2 usage or config error."
+            "2 usage or config error, or two sessions with the same output name."
         ),
     )
     conv.add_argument("sessions", nargs="+", metavar="SESSION_OR_DIR", type=Path)
@@ -145,6 +152,26 @@ def _collect(
     return sessions, bad
 
 
+def _plan(sessions: Sequence[Path], out_dir: Path, per_segment: bool) -> dict[Path, list[Path]]:
+    """Final output paths per session. Sessions that cannot be loaded fail later, in conversion."""
+    plan: dict[Path, list[Path]] = {}
+    for s in sessions:
+        try:
+            plan[s] = output_paths(load_session(s), out_dir, per_segment)
+        except (SessionError, OSError):
+            plan[s] = []
+    return plan
+
+
+def _collisions(plan: dict[Path, list[Path]]) -> dict[Path, list[Path]]:
+    """Output paths claimed by more than one session, with the sessions claiming them."""
+    claims: dict[Path, list[Path]] = {}
+    for session, outputs in plan.items():
+        for out in outputs:
+            claims.setdefault(out, []).append(session)
+    return {out: owners for out, owners in claims.items() if len(owners) > 1}
+
+
 def _print_summary(outcomes: Sequence[_Outcome], quiet: bool) -> None:
     def err(text: str) -> None:
         print(text, file=sys.stderr)
@@ -187,6 +214,17 @@ def _convert(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         allow_prefix=args.allow_prefix,
         time_base=time_base,
     )
+    plan = _plan(sessions, args.output_dir, args.per_segment)
+    clashes = _collisions(plan)
+    if clashes:
+        print(
+            "radar-cam-2-mcap: sessions with the same session_id would write the same output "
+            "file; nothing was converted. Convert them into separate output directories:",
+            file=sys.stderr,
+        )
+        for out, owners in clashes.items():
+            print(f"    {out}: {', '.join(str(o) for o in owners)}", file=sys.stderr)
+        return 2
     out_dir = str(args.output_dir)
     results: list[_Outcome]
     if args.jobs > 1 and len(sessions) > 1:

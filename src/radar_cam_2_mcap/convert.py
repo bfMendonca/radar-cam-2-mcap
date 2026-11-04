@@ -29,6 +29,7 @@ from __future__ import annotations
 import heapq
 import json
 import os
+import tempfile
 from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -50,7 +51,14 @@ from radar_cam_2_mcap.sink import McapSink
 from radar_cam_2_mcap.timebase import Timeline, crosscheck, time_quality
 from radar_cam_2_mcap.video import iter_video_frames, read_frame_meta
 
-__all__ = ["ConvertOptions", "ConvertResult", "OutputExistsError", "convert_session"]
+__all__ = [
+    "ConvertOptions",
+    "ConvertResult",
+    "OutputExistsError",
+    "convert_session",
+    "output_paths",
+    "temp_glob",
+]
 
 # Merge item: (log_ns, (rank, seq), topic, datatype, message). rank orders equal timestamps:
 # static 0 (pre-stream findings follow its two messages), video 1, radar 2, events 3.
@@ -543,6 +551,33 @@ def _chain(head: _Item | None, rest: Iterator[_Item]) -> Iterator[_Item]:
     yield from rest
 
 
+def output_paths(session: SessionInfo, out_dir: Path, per_segment: bool) -> list[Path]:
+    """Final output paths of a session (one per segment with ``per_segment``)."""
+    out_dir = Path(out_dir)
+    if per_segment:
+        return [
+            out_dir / f"{session.session_id}-seg{seg.index:04d}.mcap" for seg in session.segments
+        ]
+    return [out_dir / f"{session.session_id}.mcap"]
+
+
+def temp_glob(final: Path) -> str:
+    """Glob pattern matching the temp files written for ``final`` (see ``_make_temp``)."""
+    return f"{final.name}.*.tmp"
+
+
+def _make_temp(final: Path) -> Path:
+    """Create a unique temp file next to ``final``; its mode follows the umask like ``open``."""
+    fd, name = tempfile.mkstemp(dir=final.parent, prefix=final.name + ".", suffix=".tmp")
+    try:
+        mask = os.umask(0)
+        os.umask(mask)
+        os.fchmod(fd, 0o666 & ~mask)
+    finally:
+        os.close(fd)
+    return Path(name)
+
+
 def convert_session(
     session_dir: Path, out_dir: Path, cfg: Config, opts: ConvertOptions
 ) -> ConvertResult:
@@ -551,13 +586,11 @@ def convert_session(
     timeline = Timeline(session.anchors, opts.time_base or cfg.time.base)
     out_dir = Path(out_dir)
 
+    finals = output_paths(session, out_dir, opts.per_segment)
     if opts.per_segment:
-        groups = [
-            (out_dir / f"{session.session_id}-seg{seg.index:04d}.mcap", [seg])
-            for seg in session.segments
-        ]
+        groups = [(final, [seg]) for final, seg in zip(finals, session.segments, strict=True)]
     else:
-        groups = [(out_dir / f"{session.session_id}.mcap", list(session.segments))]
+        groups = [(finals[0], list(session.segments))]
     if not opts.overwrite:
         for final, _ in groups:
             if final.exists():
@@ -569,7 +602,7 @@ def convert_session(
     pairs: list[tuple[Path, Path]] = []
     try:
         for i, (final, segs) in enumerate(groups):
-            tmp = final.with_name(final.name + ".tmp")
+            tmp = _make_temp(final)
             pairs.append((tmp, final))
             run.write_file(
                 tmp,

@@ -625,3 +625,27 @@ def test_zero_frame_segment_is_skipped_in_gap_labels(tmp_path: Path) -> None:
     assert segs[1]["frames"] == 0 and segs[1]["radar_reports"] > 0
     gaps = [w for w in res.warnings + res.notes if w.startswith("segment gap")]
     assert len(gaps) == 1 and gaps[0].startswith("segment gap 0->2: ")
+
+
+def test_temp_file_name_is_unique_per_writer(tmp_path: Path) -> None:
+    """A temp file at the old fixed name (another writer's) is never opened or replaced."""
+    out = tmp_path / "o"
+    out.mkdir()
+    other = out / "s000066.mcap.tmp"
+    other.write_bytes(b"another writer")
+    res = convert_session(FIXTURES / "complete_2seg", out, CFG, ConvertOptions())
+    assert other.read_bytes() == b"another writer"
+    assert res.outputs == [out / "s000066.mcap"]
+    assert sorted(p.name for p in out.iterdir()) == ["s000066.mcap", "s000066.mcap.tmp"]
+
+
+def test_output_file_mode_follows_umask(tmp_path: Path) -> None:
+    import os
+    import stat
+
+    old = os.umask(0o022)
+    try:
+        res = convert_session(FIXTURES / "interrupted", tmp_path / "o", CFG, ConvertOptions())
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE(res.outputs[0].stat().st_mode) == 0o644
