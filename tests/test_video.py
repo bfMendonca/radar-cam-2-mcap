@@ -1,0 +1,174 @@
+from __future__ import annotations
+
+import io
+import itertools
+import shutil
+from pathlib import Path
+
+import pytest
+from PIL import Image, JpegImagePlugin
+
+from radar_cam_2_mcap.config import ImageConfig
+from radar_cam_2_mcap.session import SegmentFiles
+from radar_cam_2_mcap.video import (
+    FrameCountMismatch,
+    VideoFrame,
+    count_h264_frames,
+    iter_video_frames,
+    read_frame_meta,
+)
+
+FIX = Path(__file__).parent / "fixtures" / "complete_2seg" / "video"
+
+
+def _seg(h264: Path | None, meta: Path | None, index: int = 0) -> SegmentFiles:
+    return SegmentFiles(index=index, h264=h264, meta=meta, radar=None)
+
+
+def _fixture_seg() -> SegmentFiles:
+    return _seg(FIX / "0000.h264", FIX / "0000.meta.json")
+
+
+def _truncated_meta_copy(tmp_path: Path, keep: int) -> SegmentFiles:
+    """Copy of segment 0 whose meta.json keeps only `keep` frames."""
+    metas = read_frame_meta(FIX / "0000.meta.json")
+    import json
+
+    objs = [m.fields for m in metas[:keep]]
+    meta = tmp_path / "0000.meta.json"
+    meta.write_text(json.dumps(objs))
+    h264 = tmp_path / "0000.h264"
+    shutil.copy(FIX / "0000.h264", h264)
+    return _seg(h264, meta)
+
+
+def test_read_frame_meta_counts_and_first_timestamp() -> None:
+    metas = read_frame_meta(FIX / "0000.meta.json")
+    assert len(metas) == count_h264_frames(FIX / "0000.h264")
+    assert metas[0].index == 0
+    assert metas[0].sensor_ts_ns == 249076560000
+    assert metas[0].frame_wall_clock_us == 1793353171516005
+    assert metas[0].fields["ExposureTime"] == 8385
+
+
+def test_read_frame_meta_truncated_tail(tmp_path: Path) -> None:
+    full = (FIX / "0000.meta.json").read_text()
+    total = len(read_frame_meta(FIX / "0000.meta.json"))
+    cut = tmp_path / "m.json"
+    cut.write_text(full[: len(full) // 2])
+    metas = read_frame_meta(cut)
+    assert 0 < len(metas) < total
+    assert [m.index for m in metas] == list(range(len(metas)))
+
+
+def test_read_frame_meta_skips_objects_without_sensor_timestamp(tmp_path: Path) -> None:
+    p = tmp_path / "m.json"
+    p.write_text('[{"a": 1}, {"SensorTimestamp": 5}, {"SensorTimestamp": 9}]')
+    metas = read_frame_meta(p)
+    assert [(m.index, m.sensor_ts_ns, m.frame_wall_clock_us) for m in metas] == [
+        (0, 5, None),
+        (1, 9, None),
+    ]
+
+
+def test_count_h264_frames_matches_meta_on_complete_fixture() -> None:
+    for name in ("0000", "0001"):
+        assert count_h264_frames(FIX / f"{name}.h264") == len(
+            read_frame_meta(FIX / f"{name}.meta.json")
+        )
+
+
+def test_count_h264_frames_across_chunk_boundary(tmp_path: Path) -> None:
+    # slice NALs (type 1 and 5) and a non-slice NAL (type 7), start codes at odd offsets
+    data = (
+        b"\x00\x00\x01\x65aa"
+        + b"\x00\x00\x01\x67bb"
+        + b"\x00\x00\x00\x01\x41cc"
+        + b"\x00\x00\x01\x41"
+    )
+    p = tmp_path / "x.h264"
+    p.write_bytes(data)
+    assert count_h264_frames(p) == 3
+
+
+def test_decoded_frames_pair_with_meta_in_order() -> None:
+    warnings: list[str] = []
+    frames = list(
+        iter_video_frames(_fixture_seg(), ImageConfig(), allow_prefix=False, warnings=warnings)
+    )
+    metas = read_frame_meta(FIX / "0000.meta.json")
+    assert [f.meta.index for f in frames] == list(range(len(metas)))
+    ts = [f.meta.sensor_ts_ns for f in frames]
+    assert all(a < b for a, b in itertools.pairwise(ts))
+    assert all(f.fmt == "jpeg" and f.data[:2] == b"\xff\xd8" for f in frames)
+    assert all(f.width == 1296 and f.height == 972 for f in frames)
+    assert warnings == []
+
+
+def test_iter_is_lazy() -> None:
+    it = iter_video_frames(_fixture_seg(), ImageConfig(), allow_prefix=False, warnings=[])
+    first = next(it)
+    assert isinstance(first, VideoFrame)
+    assert first.meta.index == 0
+
+
+def test_mismatch_raises_without_allow_prefix(tmp_path: Path) -> None:
+    seg = _truncated_meta_copy(tmp_path, 10)
+    with pytest.raises(FrameCountMismatch) as e:
+        list(iter_video_frames(seg, ImageConfig(), allow_prefix=False, warnings=[]))
+    assert "10" in str(e.value)
+
+
+def test_allow_prefix_converts_common_prefix_with_warning(tmp_path: Path) -> None:
+    seg = _truncated_meta_copy(tmp_path, 10)
+    warnings: list[str] = []
+    frames = list(iter_video_frames(seg, ImageConfig(), allow_prefix=True, warnings=warnings))
+    assert len(frames) == 10
+    assert len(warnings) == 1
+    assert "h264" in warnings[0]
+
+
+def test_allow_prefix_meta_longer_than_stream(tmp_path: Path) -> None:
+    seg = _truncated_meta_copy(tmp_path, 10)
+    assert seg.h264 is not None
+    # Cut the stream at the start of the 6th slice NAL: keeps 5 frames.
+    data = (FIX / "0000.h264").read_bytes()
+    pos = -1
+    seen = 0
+    i = 0
+    while seen < 5:
+        i = data.index(b"\x00\x00\x01", i) + 3
+        if data[i] & 0x1F in (1, 5):
+            seen += 1
+    pos = data.index(b"\x00\x00\x01", i)
+    while data[pos + 3] & 0x1F not in (1, 5):
+        pos = data.index(b"\x00\x00\x01", pos + 3)
+    seg.h264.write_bytes(data[:pos])
+    warnings: list[str] = []
+    frames = list(iter_video_frames(seg, ImageConfig(), allow_prefix=True, warnings=warnings))
+    assert len(frames) == 5
+    assert len(warnings) == 1 and "meta" in warnings[0]
+
+
+def test_missing_h264_yields_nothing_with_warning() -> None:
+    warnings: list[str] = []
+    seg = _seg(None, FIX / "0000.meta.json", index=3)
+    assert list(iter_video_frames(seg, ImageConfig(), allow_prefix=False, warnings=warnings)) == []
+    assert len(warnings) == 1
+
+
+def test_png_format_roundtrip() -> None:
+    it = iter_video_frames(
+        _fixture_seg(), ImageConfig(format="png"), allow_prefix=False, warnings=[]
+    )
+    f = next(it)
+    assert f.fmt == "png"
+    assert f.data[:8] == b"\x89PNG\r\n\x1a\n"
+    assert Image.open(io.BytesIO(f.data)).size == (1296, 972)
+
+
+def test_jpeg_uses_420_subsampling() -> None:
+    f = next(iter_video_frames(_fixture_seg(), ImageConfig(), allow_prefix=False, warnings=[]))
+    img = Image.open(io.BytesIO(f.data))
+    assert isinstance(img, JpegImagePlugin.JpegImageFile)
+    assert JpegImagePlugin.get_sampling(img) == 2
