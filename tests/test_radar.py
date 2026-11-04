@@ -1,0 +1,147 @@
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import ld2451
+from ld2451.protocol import encode_report
+
+from radar_cam_2_mcap.radar import RadarStats, iter_radar_reports
+
+FIXTURES = Path(__file__).parent / "fixtures"
+HEADER = "t_rx_ns,hex\n"
+
+
+def _write(path: Path, rows: list[tuple[int, bytes]], tail: str = "") -> Path:
+    path.write_text(HEADER + "".join(f"{t},{d.hex()}\n" for t, d in rows) + tail)
+    return path
+
+
+def _target(angle: int = 10, dist: int = 20, approaching: bool = True) -> ld2451.Target:
+    return ld2451.Target(
+        angle_deg=angle, distance_m=dist, approaching=approaching, speed_kmh=30, snr=100
+    )
+
+
+def test_fragmented_data_frame_decodes_once_with_first_byte_time(tmp_path: Path) -> None:
+    frame = encode_report([_target(), _target(-5, 40, False)])
+    assert frame[:4] == bytes.fromhex("f4f3f2f1")
+    a, b, c = frame[:3], frame[3:9], frame[9:]
+    rows = [(1000, a), (2000, b), (3000, c + b"\xf5")]
+    stats = RadarStats()
+    reports = list(iter_radar_reports(_write(tmp_path / "r.csv", rows), stats))
+    assert len(reports) == 1
+    assert reports[0].t_rx_ns == 1000
+    assert len(reports[0].targets) == 2
+    assert stats.reads == 3
+    assert stats.data_frames == 1
+    assert stats.invalid_frames == 0
+
+
+def test_command_ack_frames_are_counted_not_reported(tmp_path: Path) -> None:
+    # Lines 1-16 of the real fixture are startup command ACKs only (no data frames).
+    src = FIXTURES / "radar_targets" / "radar" / "0000.csv"
+    lines = src.read_text().splitlines(keepends=True)[:17]
+    tmp = tmp_path / "acks.csv"
+    tmp.write_text("".join(lines))
+    stats = RadarStats()
+    reports = list(iter_radar_reports(tmp, stats))
+    assert stats.ack_frames > 0
+    assert stats.reads == 16
+    assert len(reports) == stats.data_frames
+
+
+def test_empty_frame_yields_report_with_no_targets(tmp_path: Path) -> None:
+    stats = RadarStats()
+    reports = list(iter_radar_reports(_write(tmp_path / "r.csv", [(5, encode_report([]))]), stats))
+    assert len(reports) == 1
+    assert reports[0].targets == ()
+    assert reports[0].t_rx_ns == 5
+    assert stats.data_frames == 1
+
+
+def test_partial_last_line_ignored(tmp_path: Path) -> None:
+    full = encode_report([_target()])
+    path = _write(tmp_path / "r.csv", [(1, full)], tail=f"2,{full.hex()[:10]}")
+    stats = RadarStats()
+    reports = list(iter_radar_reports(path, stats))
+    assert len(reports) == 1
+    assert stats.reads == 1
+
+    # Even-length truncation of a full line must not produce a second report.
+    path2 = _write(tmp_path / "r2.csv", [(1, full)], tail=f"2,{full.hex()}")
+    assert len(list(iter_radar_reports(path2, RadarStats()))) == 1
+
+
+def test_garbled_line_skipped_with_warning(tmp_path: Path, caplog: object) -> None:
+    full = encode_report([_target()])
+    path = tmp_path / "r.csv"
+    path.write_text(HEADER + f"1,zz\n2,{full.hex()}\n")
+    import pytest
+
+    assert isinstance(caplog, pytest.LogCaptureFixture)
+    with caplog.at_level(logging.WARNING):
+        reports = list(iter_radar_reports(path, RadarStats()))
+    assert len(reports) == 1
+    assert "garbled" in caplog.text
+
+
+def test_invalid_payload_counted(tmp_path: Path) -> None:
+    # 3-byte payload: not empty, shorter than header + target.
+    bad = (
+        bytes.fromhex("f4f3f2f1")
+        + (3).to_bytes(2, "little")
+        + b"\x01\x02\x03"
+        + bytes.fromhex("f8f7f6f5")
+    )
+    stats = RadarStats()
+    reports = list(
+        iter_radar_reports(_write(tmp_path / "r.csv", [(1, bad), (2, encode_report([]))]), stats)
+    )
+    assert len(reports) == 1
+    assert stats.invalid_frames == 1
+
+
+def test_shared_decoder_joins_frame_across_files(tmp_path: Path) -> None:
+    frame = encode_report([_target()])
+    file_a = _write(tmp_path / "a.csv", [(100, b"\x00"), (200, frame[:6])])
+    file_b = _write(tmp_path / "b.csv", [(300, frame[6:])])
+
+    shared = ld2451.FrameDecoder()
+    stats = RadarStats()
+    reports = list(iter_radar_reports(file_a, stats, decoder=shared))
+    reports += list(iter_radar_reports(file_b, stats, decoder=shared))
+    assert len(reports) == 1
+    assert reports[0].t_rx_ns == 200
+    assert stats.data_frames == 1
+    assert stats.reads == 3
+    assert stats.bytes_discarded == 1  # the stray 0x00, counted once
+
+    fresh = RadarStats()
+    got = list(iter_radar_reports(file_a, fresh)) + list(iter_radar_reports(file_b, fresh))
+    assert got == []
+    assert fresh.data_frames == 0
+    assert fresh.bytes_discarded > 0
+
+
+def test_real_fixture_decodes_targets() -> None:
+    path = FIXTURES / "radar_targets" / "radar" / "0000.csv"
+    stats = RadarStats()
+    reports = list(iter_radar_reports(path, stats))
+    targets = [t for r in reports for t in r.targets]
+    # Counts observed once by running iter_radar_reports over the committed fixture
+    # and cross-checked against a bare ld2451.FrameDecoder (25 data, 6 command frames,
+    # 16 bad footers from the torn frame, 371 bytes discarded); pinned against regressions.
+    assert len(reports) == 25
+    assert len(targets) == 41
+    assert stats.data_frames == 25
+    assert stats.ack_frames == 6
+    assert stats.reads == 98
+    assert stats.invalid_frames == 16
+    assert stats.bytes_discarded == 371
+    assert targets
+    for t in targets:
+        assert -128 <= t.angle_deg <= 127
+        assert 0 <= t.distance_m <= 255
+        assert 0 <= t.speed_kmh <= 255
+        assert 0 <= t.snr <= 255
