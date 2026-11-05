@@ -23,7 +23,7 @@ uv run pytest -q
 
 The full test suite takes a few minutes. `uv run mypy` also checks `tests`.
 
-- Keep the topic table in the README, `config/default.toml` and `mapping.py` in step.
+- Keep the topic tables in the README and `docs/output-format.md`, `config/default.toml` and `mapping.py` in step.
 - Changes to the output contract should bump `CONTRACT_VERSION` in `src/radar_cam_2_mcap/__init__.py`.
 - Add an entry under *Unreleased* in `CHANGELOG.md`.
 - The source session folder is read-only: the converter must never modify it.

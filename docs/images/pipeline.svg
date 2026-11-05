@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 520" width="980" height="520" role="img" aria-labelledby="t d">
+  <title id="t">radar-cam-2-mcap pipeline</title>
+  <desc id="d">A session folder (video, radar CSV, session.json and events.jsonl) plus a TOML config are decoded and checked, mapped to ROS 2 messages, merged by log time, written as MCAP chunks to a temporary file and renamed to the final .mcap file.</desc>
+  <style>
+    :root { --line: #57606a; --fg: #1f2328; --muted: #57606a; --accent: #0969da; }
+    @media (prefers-color-scheme: dark) {
+      :root { --line: #8b949e; --fg: #e6edf3; --muted: #9da7b3; --accent: #58a6ff; }
+    }
+    text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--fg); font-size: 13px; }
+    .h { font-weight: 600; font-size: 14px; fill: var(--accent); }
+    .s { fill: var(--muted); font-size: 12px; }
+    .m { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    .box { fill: none; stroke: var(--line); stroke-width: 1.4; }
+    .out { fill: none; stroke: var(--accent); stroke-width: 2; }
+    .ar { fill: none; stroke: var(--line); stroke-width: 1.4; marker-end: url(#a); }
+    .dash { fill: none; stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 4 4; marker-end: url(#a); }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--line)"/>
+    </marker>
+  </defs>
+
+  <text class="h" x="20" y="28">Inputs (read-only)</text>
+  <text class="h" x="270" y="28">Decode and check</text>
+  <text class="h" x="545" y="28">ROS 2 messages (CDR)</text>
+  <text class="h" x="790" y="28">Write</text>
+
+  <!-- inputs -->
+  <rect class="box" x="20" y="50" width="200" height="76" rx="8"/>
+  <text class="m" x="34" y="76">video/NNNN.h264</text>
+  <text class="m" x="34" y="96">video/NNNN.meta.json</text>
+  <text class="s" x="34" y="115">raw H.264, per-frame metadata</text>
+
+  <rect class="box" x="20" y="160" width="200" height="76" rx="8"/>
+  <text class="m" x="34" y="186">radar/NNNN.csv</text>
+  <text class="s" x="34" y="206">t_rx_ns,hex</text>
+  <text class="s" x="34" y="224">raw LD2451 serial bytes</text>
+
+  <rect class="box" x="20" y="270" width="200" height="76" rx="8"/>
+  <text class="m" x="34" y="296">session.json</text>
+  <text class="m" x="34" y="316">events.jsonl</text>
+  <text class="s" x="34" y="335">clock anchors, recorder events</text>
+
+  <rect class="box" x="20" y="380" width="200" height="76" rx="8"/>
+  <text class="m" x="34" y="406">config (TOML)</text>
+  <text class="s" x="34" y="426">camera, topics, tf, image,</text>
+  <text class="s" x="34" y="444">mcap, radar, time</text>
+
+  <!-- decode -->
+  <rect class="box" x="270" y="50" width="230" height="76" rx="8"/>
+  <text x="284" y="76">Count frames, then decode</text>
+  <text class="s" x="284" y="96">NAL count vs meta.json, PyAV,</text>
+  <text class="s" x="284" y="114">Pillow JPEG q90 4:2:0 (or PNG)</text>
+
+  <rect class="box" x="270" y="160" width="230" height="76" rx="8"/>
+  <text x="284" y="186">Reassemble radar frames</text>
+  <text class="s" x="284" y="206">ld2451 FrameDecoder plus</text>
+  <text class="s" x="284" y="224">short-frame recovery</text>
+
+  <rect class="box" x="270" y="270" width="230" height="76" rx="8"/>
+  <text x="284" y="296">Timeline</text>
+  <text class="s" x="284" y="316">boot clock to wall clock by</text>
+  <text class="s" x="284" y="334">interpolating clock anchors</text>
+
+  <rect class="box" x="270" y="380" width="230" height="76" rx="8"/>
+  <text x="284" y="406">Static data</text>
+  <text class="s" x="284" y="426">camera intrinsics and sensor</text>
+  <text class="s" x="284" y="444">placement from the config</text>
+
+  <!-- messages -->
+  <rect class="box" x="545" y="50" width="200" height="76" rx="8"/>
+  <text class="m" x="559" y="76">CompressedImage</text>
+  <text class="m" x="559" y="96">CameraMetadata</text>
+  <text class="s" x="559" y="115">one per frame</text>
+
+  <rect class="box" x="545" y="160" width="200" height="76" rx="8"/>
+  <text class="m" x="559" y="186">RadarScan</text>
+  <text class="m" x="559" y="206">RadarStatus</text>
+  <text class="s" x="559" y="225">one per radar data frame</text>
+
+  <rect class="box" x="545" y="270" width="200" height="76" rx="8"/>
+  <text class="m" x="559" y="296">Log (/events)</text>
+  <text class="s" x="559" y="316">recorder events and</text>
+  <text class="s" x="559" y="334">converter findings</text>
+
+  <rect class="box" x="545" y="380" width="200" height="76" rx="8"/>
+  <text class="m" x="559" y="406">CameraInfo, TFMessage</text>
+  <text class="s" x="559" y="426">written once per file</text>
+
+  <!-- write -->
+  <rect class="box" x="790" y="50" width="170" height="64" rx="8"/>
+  <text x="804" y="76">Merge by log_time</text>
+  <text class="s" x="804" y="96">one frame in memory</text>
+
+  <rect class="box" x="790" y="160" width="170" height="64" rx="8"/>
+  <text x="804" y="186">MCAP chunks</text>
+  <text class="s" x="804" y="206">zstd, lz4 or none</text>
+
+  <rect class="box" x="790" y="270" width="170" height="64" rx="8"/>
+  <text x="804" y="296">Temp file</text>
+  <text class="s" x="804" y="316">then atomic rename</text>
+
+  <rect class="out" x="790" y="380" width="170" height="76" rx="8"/>
+  <text class="m" x="804" y="406">sNNNNNN.mcap</text>
+  <text class="s" x="804" y="426">images, scans, events, tf,</text>
+  <text class="s" x="804" y="444">file metadata</text>
+
+  <!-- arrows: input to decode -->
+  <path class="ar" d="M220 88 H268"/>
+  <path class="ar" d="M220 198 H268"/>
+  <path class="ar" d="M220 308 H268"/>
+  <path class="ar" d="M220 418 H268"/>
+  <!-- decode to messages -->
+  <path class="ar" d="M500 88 H543"/>
+  <path class="ar" d="M500 198 H543"/>
+  <path class="ar" d="M500 308 H543"/>
+  <path class="ar" d="M500 418 H543"/>
+  <!-- timestamps from Timeline -->
+  <path class="dash" d="M500 330 H522 V96"/>
+  <!-- messages to merge -->
+  <path class="ar" d="M745 88 H788"/>
+  <path class="ar" d="M745 198 H766 V100 H788"/>
+  <path class="ar" d="M745 308 H766 V104 H788"/>
+  <path class="ar" d="M745 418 H766 V108 H788"/>
+  <!-- write chain -->
+  <path class="ar" d="M875 114 V158"/>
+  <path class="ar" d="M875 224 V268"/>
+  <path class="ar" d="M875 334 V378"/>
+
+  <text class="s" x="20" y="478">Dashed line: the Timeline supplies log_time and header.stamp for the image and radar messages.</text>
+  <text class="s" x="20" y="498">Exit code 0, 3 (warnings), 1 (a session failed) or 2 (usage or config error).</text>
+</svg>
