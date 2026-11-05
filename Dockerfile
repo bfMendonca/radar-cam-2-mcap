@@ -12,7 +12,7 @@ COPY src ./src
 RUN uv sync --locked --no-default-groups --no-editable
 
 # Runtime stage: same Python minor version, only the virtualenv, a non-root user.
-FROM python:3.12-slim-bookworm
+FROM python:3.15-slim-bookworm
 RUN useradd --create-home --uid 1000 converter
 COPY --from=build /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
