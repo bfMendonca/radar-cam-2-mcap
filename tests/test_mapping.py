@@ -188,25 +188,25 @@ def test_event_message_levels_and_detail() -> None:
 
 def test_msgdefs_parse() -> None:
     assert set(mapping.MSGDEFS) == {
-        "sensor_msgs/CompressedImage",
-        "sensor_msgs/CameraInfo",
-        "radar_cam_msgs/CameraMetadata",
-        "radar_msgs/RadarScan",
-        "radar_cam_msgs/RadarStatus",
-        "rcl_interfaces/Log",
-        "tf2_msgs/TFMessage",
+        "sensor_msgs/msg/CompressedImage",
+        "sensor_msgs/msg/CameraInfo",
+        "radar_cam_msgs/msg/CameraMetadata",
+        "radar_msgs/msg/RadarScan",
+        "radar_cam_msgs/msg/RadarStatus",
+        "rcl_interfaces/msg/Log",
+        "tf2_msgs/msg/TFMessage",
     }
     two = _report(_target(), _target(angle=-5, approaching=False))
     msgs = {
-        "sensor_msgs/CompressedImage": mapping.compressed_image(_frame(), T0, "cam"),
-        "sensor_msgs/CameraInfo": mapping.camera_info(CameraIntrinsics(), T0, "cam"),
-        "radar_cam_msgs/CameraMetadata": mapping.camera_metadata(_frame(), T0, 7, 1),
-        "radar_msgs/RadarScan": mapping.radar_scan(two, T0, "radar", RadarConfig()),
-        "radar_cam_msgs/RadarStatus": mapping.radar_status(two, T0, 7),
-        "rcl_interfaces/Log": mapping.event_message(
+        "sensor_msgs/msg/CompressedImage": mapping.compressed_image(_frame(), T0, "cam"),
+        "sensor_msgs/msg/CameraInfo": mapping.camera_info(CameraIntrinsics(), T0, "cam"),
+        "radar_cam_msgs/msg/CameraMetadata": mapping.camera_metadata(_frame(), T0, 7, 1),
+        "radar_msgs/msg/RadarScan": mapping.radar_scan(two, T0, "radar", RadarConfig()),
+        "radar_cam_msgs/msg/RadarStatus": mapping.radar_status(two, T0, 7),
+        "rcl_interfaces/msg/Log": mapping.event_message(
             {"kind": "incident", "reason": "x", "detail": {"a": 1}}, T0
         ),
-        "tf2_msgs/TFMessage": mapping.tf_static(CFG.transforms, T0),
+        "tf2_msgs/msg/TFMessage": mapping.tf_static(CFG.transforms, T0),
     }
     buf = io.BytesIO()
     w = Writer(buf)
@@ -217,15 +217,15 @@ def test_msgdefs_parse() -> None:
     got = {m.channel.topic: m.ros_msg for m in read_ros2_messages(buf)}
     assert len(got) == len(mapping.MSGDEFS)
     by_type = {dt: got[f"/t{i}"] for i, dt in enumerate(mapping.MSGDEFS)}
-    img = by_type["sensor_msgs/CompressedImage"]
+    img = by_type["sensor_msgs/msg/CompressedImage"]
     assert bytes(img.data) == JPEG and img.format == "jpeg"
     assert img.header.stamp.sec == 1_700_000_000
-    scan = by_type["radar_msgs/RadarScan"]
+    scan = by_type["radar_msgs/msg/RadarScan"]
     assert len(scan.returns) == 2
     assert scan.returns[0].doppler_velocity == pytest.approx(10.0)
     assert scan.returns[1].doppler_velocity == pytest.approx(-10.0)
-    assert by_type["sensor_msgs/CameraInfo"].k[0] == pytest.approx(1285.7)
-    assert by_type["radar_cam_msgs/CameraMetadata"].exposure_us == 39891
-    assert by_type["radar_cam_msgs/RadarStatus"].target_count == 2
-    assert by_type["rcl_interfaces/Log"].level == 30
-    assert len(by_type["tf2_msgs/TFMessage"].transforms) == 3
+    assert by_type["sensor_msgs/msg/CameraInfo"].k[0] == pytest.approx(1285.7)
+    assert by_type["radar_cam_msgs/msg/CameraMetadata"].exposure_us == 39891
+    assert by_type["radar_cam_msgs/msg/RadarStatus"].target_count == 2
+    assert by_type["rcl_interfaces/msg/Log"].level == 30
+    assert len(by_type["tf2_msgs/msg/TFMessage"].transforms) == 3

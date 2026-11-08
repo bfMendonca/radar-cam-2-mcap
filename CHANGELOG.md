@@ -7,6 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- MCAP schema names are now ROS 2 style (`sensor_msgs/msg/CompressedImage`, not
+  `sensor_msgs/CompressedImage`), so `ros2 bag` and av-perception-lab accept the files. Field
+  types and `MSG:` dependency lines inside the schema text keep the short `pkg/Type` form, as in
+  rosbag2. `contract_version` is now 0.2 (schema names are part of the contract).
 - Sessions with the same `session_id` in one run (two recorders, or a copied folder) are refused
   with exit code 2 before anything is converted, instead of corrupting or replacing each other's
   output. Temp files now have unique names (`<name>.mcap.<random>.tmp`).

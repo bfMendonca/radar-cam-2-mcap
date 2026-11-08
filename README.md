@@ -43,7 +43,7 @@ raw radar bytes. This tool runs on a laptop, workstation or container and turns 
 session into one MCAP file with standard ROS 2 messages and an explicit timestamp on every frame
 and radar reading. It never modifies the source folder.
 
-Status: version 0.1.0, alpha. Topic and metadata names are a draft (`contract_version` 0.1). The
+Status: version 0.1.0, alpha. Topic and metadata names are a draft (`contract_version` 0.2). The
 catalog and ingestion pipeline that will consume the files are a separate project and are out of
 scope here.
 
@@ -51,7 +51,7 @@ scope here.
 
 - **One file per session.** The 5-minute segments are joined; `--per-segment` writes one file per
   segment instead.
-- **Images frame by frame.** `sensor_msgs/CompressedImage`, JPEG quality 90 with 4:2:0
+- **Images frame by frame.** `sensor_msgs/msg/CompressedImage`, JPEG quality 90 with 4:2:0
   subsampling by default, PNG optional (`[image]`).
 - **Capture timing.** `log_time` equals `header.stamp` on every image and radar message. Boot
   time is mapped to wall time through the recorder's clock anchors, and `time_quality` records
@@ -59,7 +59,7 @@ scope here.
 - **Radar frame recovery.** Radar bytes are reassembled with the
   [ld2451](https://github.com/bfMendonca/ld2451) driver; data frames whose count or length
   overstate the targets present are kept (`recover_short_frames`). Messages are
-  `radar_msgs/RadarScan`.
+  `radar_msgs/msg/RadarScan`.
 - **Sensor placement and camera info.** `/tf_static` comes from the OpenSCAD design of the mount;
   `CameraInfo` comes from the config, with uncalibrated Pi camera v1.3 defaults.
 - **Damaged sessions.** Interrupted and in-progress sessions convert with a warning; frames that
@@ -179,13 +179,13 @@ configurable.
 
 | Topic | Type |
 | --- | --- |
-| `/camera/image/compressed` | `sensor_msgs/CompressedImage`, one per decoded frame |
-| `/camera/camera_info` | `sensor_msgs/CameraInfo`, once per file |
-| `/camera/metadata` | `radar_cam_msgs/CameraMetadata`, per frame (exposure, gains, lux, ...) |
-| `/radar/scan` | `radar_msgs/RadarScan`, one per radar data frame |
-| `/radar/status` | `radar_cam_msgs/RadarStatus`, per radar data frame |
-| `/events` | `rcl_interfaces/Log`, recorder events plus the converter's findings |
-| `/tf_static` | `tf2_msgs/TFMessage`, once per file |
+| `/camera/image/compressed` | `sensor_msgs/msg/CompressedImage`, one per decoded frame |
+| `/camera/camera_info` | `sensor_msgs/msg/CameraInfo`, once per file |
+| `/camera/metadata` | `radar_cam_msgs/msg/CameraMetadata`, per frame (exposure, gains, lux, ...) |
+| `/radar/scan` | `radar_msgs/msg/RadarScan`, one per radar data frame |
+| `/radar/status` | `radar_cam_msgs/msg/RadarStatus`, per radar data frame |
+| `/events` | `rcl_interfaces/msg/Log`, recorder events plus the converter's findings |
+| `/tf_static` | `tf2_msgs/msg/TFMessage`, once per file |
 
 Each file also carries metadata records (`radar_cam_2_mcap`, `source_session`, `segments`,
 `radar_stats`) with the contract version, time quality, warnings and counts. Fields, radar
@@ -211,7 +211,7 @@ not been built or run: Docker was not available when it was written.
 - `radar.angle_sign` is unverified, and `radar.invert_direction` (default true) was derived from
   one session ([configuration](docs/configuration.md#caveats-on-the-defaults)).
 - `amplitude` in `RadarReturn` is the raw SNR value, not dB.
-- `contract_version` 0.1 is a draft; topic and metadata names may change.
+- `contract_version` 0.2 is a draft; topic and metadata names may change.
 - Output is about 4 to 7 times the size of the H.264 input, because frames are stored
   individually.
 - `--per-segment`, `--jobs`, custom transforms, PNG output and cross-check failures have not been

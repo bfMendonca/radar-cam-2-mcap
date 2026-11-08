@@ -10,6 +10,8 @@ Checks, each reported as PASS/FAIL/INFO:
   (``iter_messages(log_time_order=True)`` compared with the unordered iteration);
 * ``header.stamp`` equals ``log_time`` on every message of the image, radar scan, radar status
   and camera metadata topics (decoded with ``mcap_ros2``);
+* schema encoding is ``ros2msg`` and every schema name is one of the seven ``pkg/msg/Type``
+  names;
 * the file-level metadata records are printed;
 * with ``--session``: image count equals the number of ``SensorTimestamp`` objects over the
   session's ``video/*.meta.json``. With ``--allow-prefix`` a difference is printed instead of
@@ -37,6 +39,17 @@ STAMPED = (
     "/camera/metadata",
 )
 IMAGE_TOPIC = "/camera/image/compressed"
+EXPECTED_SCHEMAS = frozenset(
+    {
+        "sensor_msgs/msg/CompressedImage",
+        "sensor_msgs/msg/CameraInfo",
+        "radar_cam_msgs/msg/CameraMetadata",
+        "radar_msgs/msg/RadarScan",
+        "radar_cam_msgs/msg/RadarStatus",
+        "rcl_interfaces/msg/Log",
+        "tf2_msgs/msg/TFMessage",
+    }
+)
 
 
 def iso(ns: int) -> str:
@@ -97,6 +110,23 @@ def topic_summary(path: Path, rep: Report) -> dict[str, int]:
         f"{len(file_order)} vs {len(sorted_times)} msgs",
     )
     return counts
+
+
+def check_schemas(path: Path, rep: Report) -> None:
+    """Every schema is ``ros2msg`` with a ROS 2 style ``pkg/msg/Type`` name."""
+    with path.open("rb") as fh:
+        schemas = list(make_reader(fh).get_summary().schemas.values())  # type: ignore[union-attr]
+    names = {s.name for s in schemas}
+    rep.check(
+        all(s.encoding == "ros2msg" for s in schemas),
+        "schema encoding is ros2msg",
+        ", ".join(sorted({s.encoding for s in schemas})),
+    )
+    rep.check(
+        names <= EXPECTED_SCHEMAS and bool(names),
+        "schema names use the ROS 2 pkg/msg/Type form",
+        ", ".join(sorted(names)),
+    )
 
 
 def check_stamps(path: Path, rep: Report) -> None:
@@ -171,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     rep = Report()
     print(f"File: {args.output} ({args.output.stat().st_size} bytes)")
     counts = topic_summary(args.output, rep)
+    check_schemas(args.output, rep)
     check_stamps(args.output, rep)
     print_metadata(args.output)
     if args.session is not None:

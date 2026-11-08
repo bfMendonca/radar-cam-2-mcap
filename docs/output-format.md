@@ -4,19 +4,22 @@ One MCAP per session. Messages use ROS 2 CDR with `ros2msg` schemas, which are e
 file. The message definitions are in [`src/radar_cam_2_mcap/msgdefs`](../src/radar_cam_2_mcap/msgdefs);
 the upstream ones are vendored unchanged and `radar_cam_msgs/*` are written for this project.
 
-`contract_version` **0.1 is a draft proposal** for topic and metadata names, written before the
+Top-level schema names use the ROS 2 form `pkg/msg/Type`, as rosbag2 writes them. Inside the schema
+text, field types and `MSG:` dependency lines use the short `pkg/Type` form.
+
+`contract_version` **0.2 is a draft proposal** for topic and metadata names, written before the
 consuming pipeline exists. Topics and frame IDs are configurable; every file records its
 `contract_version`.
 
 | Topic | Type | Content |
 | --- | --- | --- |
-| `/camera/image/compressed` | `sensor_msgs/CompressedImage` | One per decoded frame, JPEG by default (PNG optional). |
-| `/camera/camera_info` | `sensor_msgs/CameraInfo` | From config, written once per file. |
-| `/camera/metadata` | `radar_cam_msgs/CameraMetadata` | Per frame: exposure, gains, lux, colour temperature and gains, colour correction matrix, black levels, focus FoM, AE state, scaler crop, recorder wall clock, boot-clock timestamp, segment and frame index. |
-| `/radar/scan` | `radar_msgs/RadarScan` | One per decoded data frame; an empty frame gives a scan with no returns. |
-| `/radar/status` | `radar_cam_msgs/RadarStatus` | Per data frame: reported target count, targets actually present, approach alarm, boot-clock receive time. |
-| `/events` | `rcl_interfaces/Log` | Every `events.jsonl` entry (recorder incidents as WARN, state changes as INFO) plus the converter's own findings. |
-| `/tf_static` | `tf2_msgs/TFMessage` | Sensor placement, written once per file. |
+| `/camera/image/compressed` | `sensor_msgs/msg/CompressedImage` | One per decoded frame, JPEG by default (PNG optional). |
+| `/camera/camera_info` | `sensor_msgs/msg/CameraInfo` | From config, written once per file. |
+| `/camera/metadata` | `radar_cam_msgs/msg/CameraMetadata` | Per frame: exposure, gains, lux, colour temperature and gains, colour correction matrix, black levels, focus FoM, AE state, scaler crop, recorder wall clock, boot-clock timestamp, segment and frame index. |
+| `/radar/scan` | `radar_msgs/msg/RadarScan` | One per decoded data frame; an empty frame gives a scan with no returns. |
+| `/radar/status` | `radar_cam_msgs/msg/RadarStatus` | Per data frame: reported target count, targets actually present, approach alarm, boot-clock receive time. |
+| `/events` | `rcl_interfaces/msg/Log` | Every `events.jsonl` entry (recorder incidents as WARN, state changes as INFO) plus the converter's own findings. |
+| `/tf_static` | `tf2_msgs/msg/TFMessage` | Sensor placement, written once per file. |
 
 File-level metadata records:
 

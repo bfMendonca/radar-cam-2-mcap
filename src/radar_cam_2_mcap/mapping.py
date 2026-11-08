@@ -47,12 +47,12 @@ def _header(stamp_ns: int, frame_id: str) -> dict[str, Any]:
 
 
 def compressed_image(frame: VideoFrame, stamp_ns: int, frame_id: str) -> dict[str, Any]:
-    """``sensor_msgs/CompressedImage``; ``format`` is ``jpeg`` or ``png``."""
+    """``sensor_msgs/msg/CompressedImage``; ``format`` is ``jpeg`` or ``png``."""
     return {"header": _header(stamp_ns, frame_id), "format": frame.fmt, "data": frame.data}
 
 
 def camera_info(cfg: CameraIntrinsics, stamp_ns: int, frame_id: str) -> dict[str, Any]:
-    """``sensor_msgs/CameraInfo`` from configuration (uncalibrated unless ``cfg.calibrated``)."""
+    """``sensor_msgs/msg/CameraInfo`` from configuration (uncalibrated unless calibrated)."""
     return {
         "header": _header(stamp_ns, frame_id),
         "height": cfg.height,
@@ -81,7 +81,7 @@ def _nums(fields: dict[str, Any], key: str, n: int) -> list[float]:
 
 
 def camera_metadata(frame: VideoFrame, stamp_ns: int, boot_ns: int, segment: int) -> dict[str, Any]:
-    """``radar_cam_msgs/CameraMetadata`` from the frame's meta.json object.
+    """``radar_cam_msgs/msg/CameraMetadata`` from the frame's meta.json object.
 
     Keys absent from meta.json give 0 (or an empty string).
     """
@@ -110,7 +110,7 @@ def camera_metadata(frame: VideoFrame, stamp_ns: int, boot_ns: int, segment: int
 def radar_scan(
     report: ld2451.RadarReport, stamp_ns: int, frame_id: str, cfg: RadarConfig
 ) -> dict[str, Any]:
-    """``radar_msgs/RadarScan``; one return per target (an empty frame gives no returns).
+    """``radar_msgs/msg/RadarScan``; one return per target (an empty frame gives no returns).
 
     range is metres; azimuth is ``cfg.angle_sign * radians(angle_deg)`` (positive anticlockwise,
     REP-103; the LD2451 angle sign is UNVERIFIED, so the default ``angle_sign = 1`` is an
@@ -136,7 +136,7 @@ def radar_scan(
 
 
 def radar_status(report: ld2451.RadarReport, stamp_ns: int, boot_ns: int) -> dict[str, Any]:
-    """``radar_cam_msgs/RadarStatus``; ``target_count`` may be below ``reported_count``."""
+    """``radar_cam_msgs/msg/RadarStatus``; ``target_count`` may be below ``reported_count``."""
     return {
         "header": _header(stamp_ns, ""),
         "reported_count": report.reported_count,
@@ -160,7 +160,7 @@ def _quaternion(roll: float, pitch: float, yaw: float) -> dict[str, float]:
 
 
 def tf_static(transforms: Sequence[FrameTransform], stamp_ns: int) -> dict[str, Any]:
-    """``tf2_msgs/TFMessage`` holding one stamped transform per configured frame."""
+    """``tf2_msgs/msg/TFMessage`` holding one stamped transform per configured frame."""
     return {
         "transforms": [
             {
@@ -177,7 +177,7 @@ def tf_static(transforms: Sequence[FrameTransform], stamp_ns: int) -> dict[str, 
 
 
 def event_message(event: dict[str, Any], stamp_ns: int) -> dict[str, Any]:
-    """``rcl_interfaces/Log`` from an ``events.jsonl`` dict or a converter finding.
+    """``rcl_interfaces/msg/Log`` from an ``events.jsonl`` dict or a converter finding.
 
     Recorder incidents are WARN (30) and state changes INFO (20); an event carrying its own
     integer ``level`` (converter findings, ``kind`` ``converter``) keeps it. ``msg`` is the
@@ -211,8 +211,12 @@ def _read(name: str) -> str:
 
 
 def _schema(top: str, deps: Sequence[str]) -> str:
-    """ros2msg schema text: the message, then each dependency after a line of 80 ``=``."""
-    parts = [_read(top.split("/")[1])]
+    """ros2msg schema text: the message, then each dependency after a line of 80 ``=``.
+
+    ``top`` is the ROS 2 style name (``pkg/msg/Type``); the dependency names stay short
+    (``pkg/Type``), as in rosbag2 schema text.
+    """
+    parts = [_read(top.split("/")[-1])]
     for dep in deps:
         parts.append(f"{'=' * 80}\nMSG: {dep}\n{_read(dep.split('/')[1])}")
     return "\n".join(p if p.endswith("\n") else p + "\n" for p in parts)
@@ -221,16 +225,18 @@ def _schema(top: str, deps: Sequence[str]) -> str:
 _HEADER = ("std_msgs/Header", "builtin_interfaces/Time")
 
 MSGDEFS: dict[str, str] = {
-    "sensor_msgs/CompressedImage": _schema("sensor_msgs/CompressedImage", _HEADER),
-    "sensor_msgs/CameraInfo": _schema(
-        "sensor_msgs/CameraInfo", (*_HEADER, "sensor_msgs/RegionOfInterest")
+    "sensor_msgs/msg/CompressedImage": _schema("sensor_msgs/msg/CompressedImage", _HEADER),
+    "sensor_msgs/msg/CameraInfo": _schema(
+        "sensor_msgs/msg/CameraInfo", (*_HEADER, "sensor_msgs/RegionOfInterest")
     ),
-    "radar_cam_msgs/CameraMetadata": _schema("radar_cam_msgs/CameraMetadata", _HEADER),
-    "radar_msgs/RadarScan": _schema("radar_msgs/RadarScan", (*_HEADER, "radar_msgs/RadarReturn")),
-    "radar_cam_msgs/RadarStatus": _schema("radar_cam_msgs/RadarStatus", _HEADER),
-    "rcl_interfaces/Log": _schema("rcl_interfaces/Log", ("builtin_interfaces/Time",)),
-    "tf2_msgs/TFMessage": _schema(
-        "tf2_msgs/TFMessage",
+    "radar_cam_msgs/msg/CameraMetadata": _schema("radar_cam_msgs/msg/CameraMetadata", _HEADER),
+    "radar_msgs/msg/RadarScan": _schema(
+        "radar_msgs/msg/RadarScan", (*_HEADER, "radar_msgs/RadarReturn")
+    ),
+    "radar_cam_msgs/msg/RadarStatus": _schema("radar_cam_msgs/msg/RadarStatus", _HEADER),
+    "rcl_interfaces/msg/Log": _schema("rcl_interfaces/msg/Log", ("builtin_interfaces/Time",)),
+    "tf2_msgs/msg/TFMessage": _schema(
+        "tf2_msgs/msg/TFMessage",
         (
             "geometry_msgs/TransformStamped",
             "std_msgs/Header",

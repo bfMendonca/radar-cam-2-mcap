@@ -26,7 +26,7 @@ def _log_msg(text: str) -> dict[str, object]:
 def test_sink_roundtrip(tmp_path: Path) -> None:
     path = tmp_path / "a.mcap"
     with McapSink(path, McapConfig()) as sink:
-        sink.register("/events", "rcl_interfaces/Log")
+        sink.register("/events", "rcl_interfaces/msg/Log")
         sink.write("/events", _log_msg("hello"), 1_000_000_123)
         sink.write("/events", _log_msg("again"), 2_000_000_000, 2_000_000_001)
         sink.add_metadata("m", {"k": "v"})
@@ -51,7 +51,7 @@ def test_sink_compression_option(tmp_path: Path, compression: str) -> None:
     path = tmp_path / "a.mcap"
     cfg = McapConfig(compression=compression, chunk_size=1024)  # type: ignore[arg-type]
     with McapSink(path, cfg) as sink:
-        sink.register("/events", "rcl_interfaces/Log")
+        sink.register("/events", "rcl_interfaces/msg/Log")
         for i in range(50):
             sink.write("/events", _log_msg("x" * 100), 1000 + i)
     with path.open("rb") as fh:

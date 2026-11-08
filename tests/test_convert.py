@@ -99,14 +99,50 @@ def test_convert_counts_and_order(name: str, tmp_path: Path) -> None:
     assert res.outputs == [out]
 
 
+ROS2_SCHEMA_NAMES = {
+    "sensor_msgs/msg/CompressedImage",
+    "sensor_msgs/msg/CameraInfo",
+    "radar_cam_msgs/msg/CameraMetadata",
+    "radar_msgs/msg/RadarScan",
+    "radar_cam_msgs/msg/RadarStatus",
+    "rcl_interfaces/msg/Log",
+    "tf2_msgs/msg/TFMessage",
+}
+
+
+def test_schema_names_are_ros2_style(tmp_path: Path) -> None:
+    out, _ = _convert("complete_2seg", tmp_path)
+    with out.open("rb") as fh:
+        summary = make_reader(fh).get_summary()
+    assert summary is not None
+    schemas = list(summary.schemas.values())
+    assert {s.name for s in schemas} == ROS2_SCHEMA_NAMES
+    assert len(schemas) == len(ROS2_SCHEMA_NAMES)
+    assert {s.encoding for s in schemas} == {"ros2msg"}
+
+
+def test_all_messages_decode_with_ros2_reader(tmp_path: Path) -> None:
+    out, _ = _convert("complete_2seg", tmp_path)
+    with out.open("rb") as fh:
+        expected = sum(1 for _ in make_reader(fh).iter_messages())
+    seen: set[str] = set()
+    n = 0
+    for item in read_ros2_messages(str(out)):
+        assert item.ros_msg is not None
+        seen.add(item.schema.name)
+        n += 1
+    assert n == expected
+    assert seen == ROS2_SCHEMA_NAMES
+
+
 def test_convert_complete_fixture(tmp_path: Path) -> None:
     out, res = _convert("complete_2seg", tmp_path)
     # The fixture is a trimmed excerpt, so the 0->1 gap is ~300 s (WARN); nothing else warns.
     assert res.warnings == ["segment gap 0->1: 299632291000 ns"]
     assert res.notes == COMPLETE_NOTES
     meta = _metadata(out)
-    assert meta["radar_cam_2_mcap"]["contract_version"] == "0.1"
-    assert radar_cam_2_mcap.CONTRACT_VERSION == "0.1"
+    assert meta["radar_cam_2_mcap"]["contract_version"] == "0.2"
+    assert radar_cam_2_mcap.CONTRACT_VERSION == "0.2"
     assert meta["radar_cam_2_mcap"]["converter_version"] == radar_cam_2_mcap.__version__
     assert meta["radar_cam_2_mcap"]["time_quality"] == "ntp"
     assert meta["radar_cam_2_mcap"]["time_base"] == "wall"

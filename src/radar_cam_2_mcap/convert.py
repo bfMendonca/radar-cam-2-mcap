@@ -295,7 +295,7 @@ class _Run:
                     log,
                     (_RANK_VIDEO, seq),
                     cfg.topics.image,
-                    "sensor_msgs/CompressedImage",
+                    "sensor_msgs/msg/CompressedImage",
                     img,
                 )
                 meta = mapping.camera_metadata(frame, log, boot, seg.index)
@@ -304,7 +304,7 @@ class _Run:
                     log,
                     (_RANK_VIDEO, seq + 1),
                     cfg.topics.camera_metadata,
-                    "radar_cam_msgs/CameraMetadata",
+                    "radar_cam_msgs/msg/CameraMetadata",
                     meta,
                 )
                 seq += 2
@@ -333,14 +333,20 @@ class _Run:
                 stats[seg.index].radar_reports += 1
                 stats[seg.index].touch(boot)
                 scan = mapping.radar_scan(report, log, cfg.topics.frame_radar, cfg.radar)
-                yield (log, (_RANK_RADAR, seq), cfg.topics.radar_scan, "radar_msgs/RadarScan", scan)
+                yield (
+                    log,
+                    (_RANK_RADAR, seq),
+                    cfg.topics.radar_scan,
+                    "radar_msgs/msg/RadarScan",
+                    scan,
+                )
                 status = mapping.radar_status(report, log, boot)
                 status["header"]["frame_id"] = cfg.topics.frame_radar
                 yield (
                     log,
                     (_RANK_RADAR, seq + 1),
                     cfg.topics.radar_status,
-                    "radar_cam_msgs/RadarStatus",
+                    "radar_cam_msgs/msg/RadarStatus",
                     status,
                 )
                 seq += 2
@@ -352,11 +358,11 @@ class _Run:
             log_ns,
             (_RANK_STATIC, 0),
             cfg.topics.camera_info,
-            "sensor_msgs/CameraInfo",
+            "sensor_msgs/msg/CameraInfo",
             info,
         )
         tf = mapping.tf_static(cfg.transforms, log_ns)
-        yield (log_ns, (_RANK_STATIC, 1), cfg.topics.tf_static, "tf2_msgs/TFMessage", tf)
+        yield (log_ns, (_RANK_STATIC, 1), cfg.topics.tf_static, "tf2_msgs/msg/TFMessage", tf)
 
     def event_stream(
         self, events: list[dict[str, Any]], pre: list[_Finding], log_ns: int
@@ -368,7 +374,7 @@ class _Run:
                 log_ns,
                 (_RANK_STATIC, 2 + i),
                 topic,
-                "rcl_interfaces/Log",
+                "rcl_interfaces/msg/Log",
                 _finding(text, level, log_ns),
             )
         for seq, ev in enumerate(events):
@@ -378,7 +384,7 @@ class _Run:
                 log,
                 (_RANK_EVENT, seq),
                 topic,
-                "rcl_interfaces/Log",
+                "rcl_interfaces/msg/Log",
                 mapping.event_message(ev, log),
             )
 
@@ -446,13 +452,13 @@ class _Run:
         topics = cfg.topics
         with McapSink(path, cfg.mcap) as sink:
             for topic, datatype in (
-                (topics.image, "sensor_msgs/CompressedImage"),
-                (topics.camera_info, "sensor_msgs/CameraInfo"),
-                (topics.camera_metadata, "radar_cam_msgs/CameraMetadata"),
-                (topics.radar_scan, "radar_msgs/RadarScan"),
-                (topics.radar_status, "radar_cam_msgs/RadarStatus"),
-                (topics.tf_static, "tf2_msgs/TFMessage"),
-                (topics.events, "rcl_interfaces/Log"),
+                (topics.image, "sensor_msgs/msg/CompressedImage"),
+                (topics.camera_info, "sensor_msgs/msg/CameraInfo"),
+                (topics.camera_metadata, "radar_cam_msgs/msg/CameraMetadata"),
+                (topics.radar_scan, "radar_msgs/msg/RadarScan"),
+                (topics.radar_status, "radar_cam_msgs/msg/RadarStatus"),
+                (topics.tf_static, "tf2_msgs/msg/TFMessage"),
+                (topics.events, "rcl_interfaces/msg/Log"),
             ):
                 sink.register(topic, datatype)
 
